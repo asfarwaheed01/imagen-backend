@@ -8,9 +8,6 @@ dist/
 .env
 .env.*
 
-# Drizzle migrations (optional — remove if you want to track these)
-drizzle/
-
 # Credentials
 service-account.json
 *.key.json
