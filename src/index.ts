@@ -14,10 +14,11 @@ app.use(express.json());
 
 app.use(
   cors({
-    origin:
-      process.env.FRONTEND_URL ||
-      "http://localhost:3000" ||
+    origin: [
+      "http://localhost:3000",
       "http://localhost:5173",
+      "https://imagen-jet-one.vercel.app",
+    ],
     credentials: true,
   }),
 );
@@ -71,8 +72,8 @@ app.use("/api/images", imageRoutes);
 // ── Start Server ────────────────────────────────────────────
 const start = async () => {
   await checkDbConnection();
-  app.listen(PORT, () => {
-    console.log(`🚀 Server running on http://localhost:${PORT}`);
+  app.listen(Number(PORT), "0.0.0.0", () => {
+    console.log(`🚀 Server running on port ${PORT}`);
   });
 };
 
