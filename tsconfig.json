@@ -5,6 +5,7 @@
     "outDir": "./dist",
     "strict": true,
     "esModuleInterop": true,
+    "skipLibCheck": true,
     "allowSyntheticDefaultImports": true,
     "types": ["node"],
     "typeRoots": ["./node_modules/@types"]
