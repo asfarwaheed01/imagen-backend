@@ -53,7 +53,6 @@ const checkDbConnection = async () => {
     console.log("✅ Database connected");
   } catch (error) {
     console.error("❌ Database connection failed:", error);
-    process.exit(1);
   }
 };
 
@@ -71,10 +70,10 @@ app.use("/api/images", imageRoutes);
 
 // ── Start Server ────────────────────────────────────────────
 const start = async () => {
-  await checkDbConnection();
   app.listen(Number(PORT), "0.0.0.0", () => {
     console.log(`🚀 Server running on port ${PORT}`);
   });
+  await checkDbConnection();
 };
 
 start();
