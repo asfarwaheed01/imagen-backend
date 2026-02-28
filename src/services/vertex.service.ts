@@ -1,17 +1,85 @@
-import { GoogleAuth } from "google-auth-library";
-import axios from "axios";
+// import { GoogleAuth } from "google-auth-library";
+// import axios from "axios";
+// import { buildFinalPrompt } from "./prompt.service";
+
+// const PROJECT_ID = process.env.GCLOUD_PROJECT_ID!;
+// const LOCATION = "us-central1";
+// const MODEL = "gemini-2.5-flash-image";
+
+// const VERTEX_URL = `https://${LOCATION}-aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${LOCATION}/publishers/google/models/${MODEL}:generateContent`;
+
+// const auth = new GoogleAuth({
+//   scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+// });
+
+// export const editImageWithVertex = async (
+//   imageBuffer: Buffer,
+//   mimeType: string,
+//   prompt: string,
+//   isCustomPrompt: boolean = false,
+// ): Promise<{ editedImage: string; finalPrompt: string }> => {
+//   const client = await auth.getClient();
+//   const accessToken = await client.getAccessToken();
+
+//   const finalPrompt = await buildFinalPrompt(prompt, isCustomPrompt);
+//   console.log("🎯 Final prompt:", finalPrompt);
+
+//   const response = await axios.post(
+//     VERTEX_URL,
+//     {
+//       contents: [
+//         {
+//           role: "user",
+//           parts: [
+//             { inlineData: { mimeType, data: imageBuffer.toString("base64") } },
+//             { text: finalPrompt },
+//           ],
+//         },
+//       ],
+//       generationConfig: {
+//         responseModalities: ["IMAGE", "TEXT"],
+//         temperature: 1,
+//       },
+//     },
+//     {
+//       headers: {
+//         "Content-Type": "application/json",
+//         Authorization: `Bearer ${accessToken.token}`,
+//       },
+//     },
+//   );
+
+//   const parts = response.data?.candidates?.[0]?.content?.parts;
+//   const imagePart = parts?.find((p: any) => p.inlineData?.data);
+
+//   if (!imagePart) {
+//     throw new Error("No image returned from Vertex AI");
+//   }
+
+//   return {
+//     editedImage: imagePart.inlineData.data,
+//     finalPrompt,
+//   };
+// };
+
+import {
+  GoogleGenAI,
+  Modality,
+  GenerateContentResponse,
+  Content,
+} from "@google/genai";
 import { buildFinalPrompt } from "./prompt.service";
 
-const PROJECT_ID = process.env.GCLOUD_PROJECT_ID!;
-const LOCATION = "us-central1";
-// const MODEL = "gemini-2.5-flash-image";
-// const MODEL = "gemini-3.1-flash-image-preview";
-const MODEL = "gemini-3-pro-image-preview";
+const MODEL = "gemini-3.1-flash-image-preview";
 
-const VERTEX_URL = `https://${LOCATION}-aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${LOCATION}/publishers/google/models/${MODEL}:generateContent`;
-
-const auth = new GoogleAuth({
-  scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+const ai = new GoogleGenAI({
+  vertexai: true,
+  project: process.env.GCLOUD_PROJECT_ID!,
+  location: process.env.GCLOUD_LOCATION || "us-central1",
+  apiVersion: "v1",
+  httpOptions: {
+    baseUrl: "https://aiplatform.googleapis.com",
+  },
 });
 
 export const editImageWithVertex = async (
@@ -20,46 +88,55 @@ export const editImageWithVertex = async (
   prompt: string,
   isCustomPrompt: boolean = false,
 ): Promise<{ editedImage: string; finalPrompt: string }> => {
-  const client = await auth.getClient();
-  const accessToken = await client.getAccessToken();
-
   const finalPrompt = await buildFinalPrompt(prompt, isCustomPrompt);
   console.log("🎯 Final prompt:", finalPrompt);
 
-  const response = await axios.post(
-    VERTEX_URL,
-    {
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { inlineData: { mimeType, data: imageBuffer.toString("base64") } },
-            { text: finalPrompt },
-          ],
+  const userContent: Content = {
+    role: "user",
+    parts: [
+      {
+        inlineData: {
+          mimeType,
+          data: imageBuffer.toString("base64"),
         },
-      ],
-      generationConfig: {
-        responseModalities: ["IMAGE", "TEXT"],
-        temperature: 1,
       },
-    },
-    {
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken.token}`,
-      },
-    },
-  );
+      { text: finalPrompt },
+    ],
+  };
 
-  const parts = response.data?.candidates?.[0]?.content?.parts;
-  const imagePart = parts?.find((p: any) => p.inlineData?.data);
+  const result = await ai.models.generateContent({
+    model: MODEL,
+    contents: [userContent],
+    config: {
+      responseModalities: [Modality.TEXT, Modality.IMAGE],
+      temperature: 1,
+      topP: 0.95,
+      maxOutputTokens: 32768,
+    },
+  });
+  const response: GenerateContentResponse = result;
+  let editedImage: string | null = null;
 
-  if (!imagePart) {
-    throw new Error("No image returned from Vertex AI");
+  const candidate = response.candidates?.[0];
+
+  if (candidate?.content?.parts) {
+    const imagePart = candidate.content.parts.find(
+      (part: any) => !!part.inlineData,
+    );
+
+    if (imagePart?.inlineData?.data) {
+      editedImage = imagePart.inlineData.data;
+    }
   }
 
-  return {
-    editedImage: imagePart.inlineData.data,
-    finalPrompt,
-  };
+  if (!editedImage) {
+    if (response.promptFeedback?.blockReason) {
+      throw new Error(
+        `Blocked by Safety: ${response.promptFeedback.blockReason}`,
+      );
+    }
+    throw new Error("No image returned from Gemini.");
+  }
+
+  return { editedImage, finalPrompt };
 };

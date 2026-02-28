@@ -17,6 +17,20 @@ export const uploadBase64ToCloudinary = async (
   return result.secure_url;
 };
 
+export const uploadImageBufferToCloudinary = async (
+  buffer: Buffer,
+  folder: string = "propenhance",
+): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    cloudinary.uploader
+      .upload_stream({ folder, resource_type: "image" }, (error, result) => {
+        if (error || !result) reject(error);
+        else resolve(result.secure_url);
+      })
+      .end(buffer);
+  });
+};
+
 export const uploadBufferToCloudinary = async (
   buffer: Buffer,
   mimeType: string,

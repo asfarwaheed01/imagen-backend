@@ -48,6 +48,7 @@ export const processImage = async (req: Request, res: Response) => {
     // 3 — Send to SHIFT-N
     try {
       await sendToShiftn(originalUrl, jobId);
+      // await processWithGemini(jobId, file.buffer, file.mimetype);
       console.log("📐 SHIFT-N accepted job:", jobId);
     } catch (shiftnError: any) {
       console.error(
@@ -57,7 +58,6 @@ export const processImage = async (req: Request, res: Response) => {
       // If SHIFT-N fails, process directly with Gemini
       await processWithGemini(jobId, file.buffer, file.mimetype);
     }
-
     res.json({ jobId });
   } catch (error: any) {
     console.error("Process error:", error?.response?.data || error);
@@ -124,7 +124,6 @@ const processWithGemini = async (
       isCustomPrompt ?? false,
     );
 
-    // Upload result to Cloudinary
     const resultUrl = await uploadBase64ToCloudinary(
       editedImage,
       "propenhance/results",
