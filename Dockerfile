@@ -9,6 +9,8 @@ COPY . .
 
 RUN npm run build
 
+RUN ls -la dist/
+
 RUN npm prune --production
 
 EXPOSE 8080
