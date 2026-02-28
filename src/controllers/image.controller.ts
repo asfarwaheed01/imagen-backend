@@ -68,9 +68,8 @@ export const processImage = async (req: Request, res: Response) => {
 // POST /api/images/shiftn-callback — SHIFT-N calls this when done
 export const shiftnCallback = async (req: Request, res: Response) => {
   try {
-    const { requestId, straightenedImage } = req.body;
+    const { requestId, image } = req.body;
     console.log("📐 SHIFT-N callback received for job:", requestId);
-    console.log("📐 SHIFT-N callback body:", JSON.stringify(req.body, null, 2));
 
     res.json({ success: true });
 
@@ -79,6 +78,7 @@ export const shiftnCallback = async (req: Request, res: Response) => {
       .from(jobs)
       .where(eq(jobs.id, requestId))
       .limit(1);
+
     if (!job.length) {
       console.error("Job not found:", requestId);
       return;
@@ -89,8 +89,7 @@ export const shiftnCallback = async (req: Request, res: Response) => {
       .set({ status: "processing", updatedAt: new Date() })
       .where(eq(jobs.id, requestId));
 
-    // Convert base64 straightened image to buffer
-    let imageBase64 = straightenedImage;
+    let imageBase64 = image;
     if (imageBase64.includes(",")) imageBase64 = imageBase64.split(",")[1];
     const imageBuffer = Buffer.from(imageBase64, "base64");
 
