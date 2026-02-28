@@ -70,8 +70,8 @@ export const shiftnCallback = async (req: Request, res: Response) => {
   try {
     const { requestId, straightenedImage } = req.body;
     console.log("📐 SHIFT-N callback received for job:", requestId);
+    console.log("📐 SHIFT-N callback body:", JSON.stringify(req.body, null, 2));
 
-    // Acknowledge immediately so SHIFT-N doesn't retry
     res.json({ success: true });
 
     const job = await db
