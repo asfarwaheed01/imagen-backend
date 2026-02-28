@@ -9,7 +9,7 @@ import { upload } from "../middlewares/upload.middleware";
 const router = Router();
 
 router.post("/process", upload.single("image"), processImage);
-router.post("/shiftn-callback", shiftnCallback);
+router.post("/shiftn-callbackURL", shiftnCallback);
 router.get("/job/:jobId", getJobStatus);
 
 export default router;
