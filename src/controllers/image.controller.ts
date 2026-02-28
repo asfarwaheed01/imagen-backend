@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 import { randomUUID } from "crypto";
 import { db } from "../db";
 import { jobs } from "../db/schema";
-import { eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import {
   uploadBufferToCloudinary,
   uploadBase64ToCloudinary,
@@ -162,5 +162,52 @@ export const getJobStatus = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     res.status(500).json({ message: "Failed to get job status" });
+  }
+};
+
+// GET /api/images/gallery?page=1&limit=10
+export const getGallery = async (req: Request, res: Response) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(50, parseInt(req.query.limit as string) || 10);
+    const offset = (page - 1) * limit;
+
+    const [galleryJobs, total] = await Promise.all([
+      db
+        .select({
+          id: jobs.id,
+          status: jobs.status,
+          originalUrl: jobs.originalUrl,
+          resultUrl: jobs.resultUrl,
+          prompt: jobs.prompt,
+          createdAt: jobs.createdAt,
+        })
+        .from(jobs)
+        .where(eq(jobs.status, "completed"))
+        .orderBy(desc(jobs.createdAt))
+        .limit(limit)
+        .offset(offset),
+
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(jobs)
+        .where(eq(jobs.status, "completed")),
+    ]);
+
+    const totalCount = Number(total[0].count);
+
+    res.json({
+      data: galleryJobs,
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / limit),
+        hasNext: page < Math.ceil(totalCount / limit),
+        hasPrev: page > 1,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ message: "Failed to fetch gallery" });
   }
 };
