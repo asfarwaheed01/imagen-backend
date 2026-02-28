@@ -4,8 +4,8 @@ import { buildFinalPrompt } from "./prompt.service";
 
 const PROJECT_ID = process.env.GCLOUD_PROJECT_ID!;
 const LOCATION = "us-central1";
-// const MODEL = "gemini-2.5-flash-image";
-const MODEL = "gemini-3.1-flash-image-preview";
+const MODEL = "gemini-2.5-flash-image";
+// const MODEL = "gemini-3.1-flash-image-preview";
 
 const VERTEX_URL = `https://${LOCATION}-aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${LOCATION}/publishers/google/models/${MODEL}:generateContent`;
 
