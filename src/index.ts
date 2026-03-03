@@ -10,6 +10,7 @@ import orderRoutes from "./routes/order.routes";
 import { isAuthenticated } from "./middlewares/auth.middleware";
 import webhookRoutes from "./routes/webhook.routes";
 import libraryRoutes from "./routes/library.routes";
+import revisionRoutes from "./routes/revision.routes";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -58,6 +59,7 @@ app.use("/api/images", imageRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/library", libraryRoutes);
+app.use("/:orderId/revisions", revisionRoutes);
 
 // ── Start Server ────────────────────────────────────────────
 const start = async () => {
