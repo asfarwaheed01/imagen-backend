@@ -1,15 +1,26 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import jwt from "jsonwebtoken";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import imageRoutes from "./routes/image.routes";
+import authRoutes from "./routes/auth.routes";
+import cookieParser from "cookie-parser";
+import orderRoutes from "./routes/order.routes";
+import { isAuthenticated } from "./middlewares/auth.middleware";
+import webhookRoutes from "./routes/webhook.routes";
+import libraryRoutes from "./routes/library.routes";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ── Middleware ──────────────────────────────────────────────
+app.use(
+  "/api/webhooks",
+  express.raw({ type: "application/json" }),
+  webhookRoutes,
+);
+
+app.use(cookieParser());
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
@@ -21,33 +32,10 @@ app.use(
       "https://imagen-jet-one.vercel.app",
     ],
     credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization"],
   }),
 );
 
-// ── JWT Middleware ──────────────────────────────────────────
-export const authenticateToken = (
-  req: express.Request,
-  res: express.Response,
-  next: express.NextFunction,
-) => {
-  const authHeader = req.headers["authorization"];
-  const token = authHeader?.split(" ")[1];
-
-  if (!token) {
-    res.status(401).json({ message: "Access token missing" });
-    return;
-  }
-
-  try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET!);
-    (req as any).user = payload;
-    next();
-  } catch {
-    res.status(403).json({ message: "Invalid or expired token" });
-  }
-};
-
-// ── DB Connection Check ─────────────────────────────────────
 const checkDbConnection = async () => {
   try {
     await db.execute(sql`SELECT 1`);
@@ -57,17 +45,19 @@ const checkDbConnection = async () => {
   }
 };
 
-// ── Routes ──────────────────────────────────────────────────
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-// Protected route example
-app.get("/me", authenticateToken, (req, res) => {
+app.get("/me", isAuthenticated, (req, res) => {
   res.json({ user: (req as any).user });
 });
 
 app.use("/api/images", imageRoutes);
+
+app.use("/api/auth", authRoutes);
+app.use("/api/orders", orderRoutes);
+app.use("/api/library", libraryRoutes);
 
 // ── Start Server ────────────────────────────────────────────
 const start = async () => {

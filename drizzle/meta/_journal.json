@@ -15,6 +15,20 @@
       "when": 1772125609409,
       "tag": "0001_peaceful_leo",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1772561380642,
+      "tag": "0002_organic_tinkerer",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1772565476018,
+      "tag": "0003_salty_kitty_pryde",
+      "breakpoints": true
     }
   ]
 }
