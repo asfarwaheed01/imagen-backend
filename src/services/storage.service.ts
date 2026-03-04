@@ -94,3 +94,11 @@ export async function deleteFromGCS(urlOrPath: string): Promise<void> {
   if (!destination) return;
   await bucket.file(destination).delete({ ignoreNotFound: true });
 }
+
+export async function uploadBase64ToGCS(
+  base64: string,
+  folder: string,
+): Promise<string> {
+  const buffer = Buffer.from(base64, "base64");
+  return uploadBufferToGCS(buffer, "image/png", folder);
+}

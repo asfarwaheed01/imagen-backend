@@ -1,7 +1,7 @@
 // import { Request, Response } from "express";
 // import { randomUUID } from "crypto";
 // import { db } from "../db";
-// import { jobs } from "../db/schema";
+// import { jobs, images } from "../db/schema";
 // import { desc, eq, sql } from "drizzle-orm";
 // import {
 //   uploadBufferToCloudinary,
@@ -9,8 +9,78 @@
 // } from "../services/cloudinary.service";
 // import { sendToShiftn } from "../services/shiftn.service";
 // import { editImageWithVertex } from "../services/vertex.service";
+// import { uploadBufferToGCS } from "../services/storage.service";
 
-// // POST /api/images/process
+// export const processWithGemini = async (
+//   jobId: string,
+//   imageBuffer: Buffer,
+//   mimeType: string,
+// ) => {
+//   try {
+//     const [job] = await db
+//       .select()
+//       .from(jobs)
+//       .where(eq(jobs.id, jobId))
+//       .limit(1);
+//     if (!job) return;
+
+//     const { prompt, isCustomPrompt } = job;
+
+//     console.log("🤖 Sending to Gemini for job:", jobId);
+//     await db
+//       .update(jobs)
+//       .set({ status: "enhancing", updatedAt: new Date() })
+//       .where(eq(jobs.id, jobId));
+
+//     const { editedImage } = await editImageWithVertex(
+//       imageBuffer,
+//       mimeType,
+//       prompt ?? "",
+//       isCustomPrompt ?? false,
+//     );
+
+//     const resultKey = await uploadBase64ToCloudinary(
+//       editedImage,
+//       "propenhance/results",
+//     );
+//     console.log("✅ Result uploaded:", resultKey);
+
+//     await db
+//       .update(jobs)
+//       .set({ status: "completed", resultKey, updatedAt: new Date() })
+//       .where(eq(jobs.id, jobId));
+
+//     // Sync image row if linked
+//     if (job.imageId) {
+//       await db
+//         .update(images)
+//         .set({ status: "edited", editedKey: resultKey, updatedAt: new Date() })
+//         .where(eq(images.id, job.imageId));
+//     }
+//   } catch (error: any) {
+//     console.error("Gemini processing error:", error);
+//     await db
+//       .update(jobs)
+//       .set({ status: "failed", error: error.message, updatedAt: new Date() })
+//       .where(eq(jobs.id, jobId));
+
+//     // Sync image row if linked
+//     const [job] = await db
+//       .select({ imageId: jobs.imageId })
+//       .from(jobs)
+//       .where(eq(jobs.id, jobId))
+//       .limit(1);
+//     if (job?.imageId) {
+//       await db
+//         .update(images)
+//         .set({ status: "failed", updatedAt: new Date() })
+//         .where(eq(images.id, job.imageId));
+//     }
+//   }
+// };
+
+// // ── POST /api/images/process — single image (original flow) ───────────────────
+
 // export const processImage = async (req: Request, res: Response) => {
 //   try {
 //     const file = req.file;
@@ -27,37 +97,40 @@
 
 //     const jobId = randomUUID();
 
-//     // 1 — Upload original to Cloudinary
 //     console.log("☁️  Uploading to Cloudinary...");
-//     const originalUrl = await uploadBufferToCloudinary(
+//     // const inputKey = await uploadBufferToCloudinary(
+//     //   file.buffer,
+//     //   file.mimetype,
+//     //   "propenhance/originals",
+//     // );
+//     const inputKey = await uploadBufferToGCS(
 //       file.buffer,
 //       file.mimetype,
-//       "propenhance/originals",
+//       `originals/${jobId}-${file.originalname}`,
 //     );
-//     console.log("☁️  Cloudinary URL:", originalUrl);
+//     console.log("☁️  Cloudinary URL:", inputKey);
 
-//     // 2 — Create job in DB
 //     await db.insert(jobs).values({
 //       id: jobId,
+//       imageId: 0, // single-image flow has no order/image row
+//       type: "ai_edit",
 //       status: "pending",
-//       originalUrl,
+//       inputKey,
 //       prompt,
 //       isCustomPrompt: isCustomPrompt === "true",
 //     });
 
-//     // 3 — Send to SHIFT-N
 //     try {
-//       await sendToShiftn(originalUrl, jobId);
-//       // await processWithGemini(jobId, file.buffer, file.mimetype);
+//       await sendToShiftn(inputKey, jobId);
 //       console.log("📐 SHIFT-N accepted job:", jobId);
 //     } catch (shiftnError: any) {
 //       console.error(
-//         "⚠️ SHIFT-N failed, processing directly with Gemini:",
+//         "⚠️ SHIFT-N failed, processing directly:",
 //         shiftnError.message,
 //       );
-//       // If SHIFT-N fails, process directly with Gemini
 //       await processWithGemini(jobId, file.buffer, file.mimetype);
 //     }
+
 //     res.json({ jobId });
 //   } catch (error: any) {
 //     console.error("Process error:", error?.response?.data || error);
@@ -65,7 +138,94 @@
 //   }
 // };
 
-// // POST /api/images/shiftn-callback — SHIFT-N calls this when done
+// // ── POST /api/orders/:orderId/images — bulk upload after payment ──────────────
+
+// export const uploadOrderImages = async (req: Request, res: Response) => {
+//   try {
+//     const user = req.user!;
+//     const orderId = Number(req.params.orderId);
+//     const files = req.files as Express.Multer.File[];
+
+//     if (!files?.length) {
+//       res.status(400).json({ message: "No images provided" });
+//       return;
+//     }
+
+//     const imageMeta: { category: string; notes: string }[] = JSON.parse(
+//       req.body.imageMeta ?? "[]",
+//     );
+
+//     const jobIds: string[] = [];
+
+//     await Promise.all(
+//       files.map(async (file, index) => {
+//         const jobId = randomUUID();
+//         const meta = imageMeta[index] ?? { category: "Internal", notes: "" };
+//         const prompt =
+//           meta.notes?.trim() || "Enhance this real estate photo professionally";
+//         const isCustomPrompt = !!meta.notes?.trim();
+
+//         const inputKey = await uploadBufferToGCS(
+//           file.buffer,
+//           file.mimetype,
+//           `originals/${jobId}-${file.originalname}`,
+//         );
+//         console.log(`☁️  [${index + 1}/${files.length}] GCS:`, inputKey);
+
+//         const [image] = await db
+//           .insert(images)
+//           .values({
+//             orderId,
+//             userId: user.id,
+//             status: "uploaded",
+//             originalKey: inputKey,
+//             originalFilename: file.originalname,
+//             mimeType: file.mimetype,
+//             fileSizeBytes: file.size,
+//             sortOrder: index,
+//             category: meta.category,
+//             clientNotes: meta.notes || null,
+//           })
+//           .returning();
+
+//         await db.insert(jobs).values({
+//           id: jobId,
+//           imageId: image.id,
+//           type: "straighten",
+//           status: "pending",
+//           inputKey,
+//           prompt,
+//           isCustomPrompt,
+//         });
+
+//         jobIds.push(jobId);
+
+//         try {
+//           await sendToShiftn(inputKey, jobId);
+//           console.log(`📐 SHIFT-N accepted job: ${jobId}`);
+//           await db
+//             .update(images)
+//             .set({ status: "straightening", updatedAt: new Date() })
+//             .where(eq(images.id, image.id));
+//         } catch (shiftnError: any) {
+//           await processWithGemini(jobId, file.buffer, file.mimetype);
+//         }
+//       }),
+//     );
+
+//     res.json({
+//       message: "Images queued for processing",
+//       jobIds,
+//       count: files.length,
+//     });
+//   } catch (error: any) {
+//     console.error("Bulk upload error:", error?.response?.data || error);
+//     res.status(500).json({ message: "Failed to upload images" });
+//   }
+// };
+
+// // ── POST /api/images/shiftn-callback — unchanged ──────────────────────────────
+
 // export const shiftnCallback = async (req: Request, res: Response) => {
 //   try {
 //     const { requestId, image } = req.body;
@@ -73,13 +233,12 @@
 
 //     res.json({ success: true });
 
-//     const job = await db
+//     const [job] = await db
 //       .select()
 //       .from(jobs)
 //       .where(eq(jobs.id, requestId))
 //       .limit(1);
-
-//     if (!job.length) {
+//     if (!job) {
 //       console.error("Job not found:", requestId);
 //       return;
 //     }
@@ -88,6 +247,13 @@
 //       .update(jobs)
 //       .set({ status: "processing", updatedAt: new Date() })
 //       .where(eq(jobs.id, requestId));
+
+//     if (job.imageId) {
+//       await db
+//         .update(images)
+//         .set({ status: "straightened", updatedAt: new Date() })
+//         .where(eq(images.id, job.imageId));
+//     }
 
 //     let imageBase64 = image;
 //     if (imageBase64.includes(",")) imageBase64 = imageBase64.split(",")[1];
@@ -99,72 +265,35 @@
 //   }
 // };
 
-// // Shared Gemini processing logic
-// const processWithGemini = async (
-//   jobId: string,
-//   imageBuffer: Buffer,
-//   mimeType: string,
-// ) => {
-//   try {
-//     const job = await db.select().from(jobs).where(eq(jobs.id, jobId)).limit(1);
-//     if (!job.length) return;
-
-//     const { prompt, isCustomPrompt } = job[0];
-
-//     console.log("🤖 Sending to Gemini for job:", jobId);
-//     await db
-//       .update(jobs)
-//       .set({ status: "enhancing", updatedAt: new Date() })
-//       .where(eq(jobs.id, jobId));
-
-//     const { editedImage } = await editImageWithVertex(
-//       imageBuffer,
-//       mimeType,
-//       prompt,
-//       isCustomPrompt ?? false,
-//     );
-
-//     const resultUrl = await uploadBase64ToCloudinary(
-//       editedImage,
-//       "propenhance/results",
-//     );
-//     console.log("✅ Result uploaded:", resultUrl);
-
-//     await db
-//       .update(jobs)
-//       .set({ status: "completed", resultUrl, updatedAt: new Date() })
-//       .where(eq(jobs.id, jobId));
-//   } catch (error: any) {
-//     console.error("Gemini processing error:", error);
-//     await db
-//       .update(jobs)
-//       .set({ status: "failed", error: error.message, updatedAt: new Date() })
-//       .where(eq(jobs.id, jobId));
-//   }
-// };
+// // ── GET /api/images/status/:jobId ─────────────────────────────────────────────
 
 // export const getJobStatus = async (req: Request, res: Response) => {
 //   try {
 //     const { jobId } = req.params as { jobId: string };
-//     const job = await db.select().from(jobs).where(eq(jobs.id, jobId)).limit(1);
+//     const [job] = await db
+//       .select()
+//       .from(jobs)
+//       .where(eq(jobs.id, jobId))
+//       .limit(1);
 
-//     if (!job.length) {
+//     if (!job) {
 //       res.status(404).json({ message: "Job not found" });
 //       return;
 //     }
 
 //     res.json({
-//       jobId: job[0].id,
-//       status: job[0].status,
-//       resultUrl: job[0].resultUrl,
-//       error: job[0].error,
+//       jobId: job.id,
+//       status: job.status,
+//       resultUrl: job.resultKey, // keep response key as resultUrl for frontend compat
+//       error: job.error,
 //     });
-//   } catch (error: any) {
+//   } catch {
 //     res.status(500).json({ message: "Failed to get job status" });
 //   }
 // };
 
-// // GET /api/images/gallery?page=1&limit=10
+// // ── GET /api/images/gallery ───────────────────────────────────────────────────
+
 // export const getGallery = async (req: Request, res: Response) => {
 //   try {
 //     const page = Math.max(1, parseInt(req.query.page as string) || 1);
@@ -176,8 +305,8 @@
 //         .select({
 //           id: jobs.id,
 //           status: jobs.status,
-//           originalUrl: jobs.originalUrl,
-//           resultUrl: jobs.resultUrl,
+//           inputKey: jobs.inputKey,
+//           resultKey: jobs.resultKey,
 //           prompt: jobs.prompt,
 //           createdAt: jobs.createdAt,
 //         })
@@ -193,20 +322,22 @@
 //         .where(eq(jobs.status, "completed")),
 //     ]);
 
-//     const totalCount = Number(total[0].count);
-
 //     res.json({
-//       data: galleryJobs,
+//       data: galleryJobs.map((j) => ({
+//         ...j,
+//         originalUrl: j.inputKey, // alias for frontend compat
+//         resultUrl: j.resultKey,
+//       })),
 //       pagination: {
 //         page,
 //         limit,
-//         total: totalCount,
-//         totalPages: Math.ceil(totalCount / limit),
-//         hasNext: page < Math.ceil(totalCount / limit),
+//         total: Number(total[0].count),
+//         totalPages: Math.ceil(Number(total[0].count) / limit),
+//         hasNext: page < Math.ceil(Number(total[0].count) / limit),
 //         hasPrev: page > 1,
 //       },
 //     });
-//   } catch (error: any) {
+//   } catch {
 //     res.status(500).json({ message: "Failed to fetch gallery" });
 //   }
 // };
@@ -216,13 +347,43 @@ import { randomUUID } from "crypto";
 import { db } from "../db";
 import { jobs, images } from "../db/schema";
 import { desc, eq, sql } from "drizzle-orm";
-import {
-  uploadBufferToCloudinary,
-  uploadBase64ToCloudinary,
-} from "../services/cloudinary.service";
 import { sendToShiftn } from "../services/shiftn.service";
 import { editImageWithVertex } from "../services/vertex.service";
-import { uploadBufferToGCS } from "../services/storage.service";
+import {
+  uploadBufferToGCS,
+  uploadBase64ToGCS,
+} from "../services/storage.service";
+
+// ── Prompt builder ────────────────────────────────────────────────────────────
+
+const CATEGORY_PROMPTS: Record<string, string> = {
+  Internal:
+    "Enhance this interior real estate photo. Improve lighting, white balance, and clarity. Make the space look bright, clean and inviting.",
+  "External Day":
+    "Enhance this exterior daytime real estate photo. Improve the sky, lawn, and facade. Make it look sharp and well-presented.",
+  Dusk: "Enhance this dusk real estate photo. Enrich the warm golden tones and balance interior and exterior lighting for a premium twilight look.",
+  Drone:
+    "Enhance this aerial drone real estate photo. Improve colour, contrast and sharpness. Make the property and surroundings look impressive.",
+  "Day to Dusk":
+    "Convert this daytime exterior photo to a realistic dusk/twilight scene. Add warm interior lighting glows, a dramatic dusk sky, and ambient outdoor lighting.",
+};
+
+const DEFAULT_PROMPT =
+  "Enhance the general quality of this real estate photo. Improve lighting, colour accuracy, and sharpness.";
+
+const buildPrompt = (
+  category?: string,
+  notes?: string,
+): { prompt: string; isCustomPrompt: boolean } => {
+  const base = (category && CATEGORY_PROMPTS[category]) ?? DEFAULT_PROMPT;
+  const hasNotes = !!notes?.trim();
+  return {
+    prompt: hasNotes
+      ? `${base} Additional instructions: ${notes!.trim()}`
+      : base,
+    isCustomPrompt: hasNotes,
+  };
+};
 
 // ── Shared Gemini processing logic ────────────────────────────────────────────
 
@@ -239,8 +400,6 @@ export const processWithGemini = async (
       .limit(1);
     if (!job) return;
 
-    const { prompt, isCustomPrompt } = job;
-
     console.log("🤖 Sending to Gemini for job:", jobId);
     await db
       .update(jobs)
@@ -250,11 +409,11 @@ export const processWithGemini = async (
     const { editedImage } = await editImageWithVertex(
       imageBuffer,
       mimeType,
-      prompt ?? "",
-      isCustomPrompt ?? false,
+      job.prompt ?? "",
+      job.isCustomPrompt ?? false,
     );
 
-    const resultKey = await uploadBase64ToCloudinary(
+    const resultKey = await uploadBase64ToGCS(
       editedImage,
       "propenhance/results",
     );
@@ -265,7 +424,6 @@ export const processWithGemini = async (
       .set({ status: "completed", resultKey, updatedAt: new Date() })
       .where(eq(jobs.id, jobId));
 
-    // Sync image row if linked
     if (job.imageId) {
       await db
         .update(images)
@@ -279,60 +437,50 @@ export const processWithGemini = async (
       .set({ status: "failed", error: error.message, updatedAt: new Date() })
       .where(eq(jobs.id, jobId));
 
-    // Sync image row if linked
-    const [job] = await db
+    const [failedJob] = await db
       .select({ imageId: jobs.imageId })
       .from(jobs)
       .where(eq(jobs.id, jobId))
       .limit(1);
-    if (job?.imageId) {
+    if (failedJob?.imageId) {
       await db
         .update(images)
         .set({ status: "failed", updatedAt: new Date() })
-        .where(eq(images.id, job.imageId));
+        .where(eq(images.id, failedJob.imageId));
     }
   }
 };
 
-// ── POST /api/images/process — single image (original flow) ───────────────────
+// ── POST /api/images/process — single image ───────────────────────────────────
 
 export const processImage = async (req: Request, res: Response) => {
   try {
     const file = req.file;
-    const { prompt, isCustomPrompt } = req.body;
+    const { category, notes } = req.body;
 
     if (!file) {
       res.status(400).json({ message: "No image uploaded" });
       return;
     }
-    if (!prompt) {
-      res.status(400).json({ message: "Prompt is required" });
-      return;
-    }
 
     const jobId = randomUUID();
+    const { prompt, isCustomPrompt } = buildPrompt(category, notes);
 
-    console.log("☁️  Uploading to Cloudinary...");
-    // const inputKey = await uploadBufferToCloudinary(
-    //   file.buffer,
-    //   file.mimetype,
-    //   "propenhance/originals",
-    // );
     const inputKey = await uploadBufferToGCS(
       file.buffer,
       file.mimetype,
       `originals/${jobId}-${file.originalname}`,
     );
-    console.log("☁️  Cloudinary URL:", inputKey);
+    console.log("☁️  GCS:", inputKey);
 
     await db.insert(jobs).values({
       id: jobId,
-      imageId: 0, // single-image flow has no order/image row
+      imageId: 0,
       type: "ai_edit",
       status: "pending",
       inputKey,
       prompt,
-      isCustomPrompt: isCustomPrompt === "true",
+      isCustomPrompt,
     });
 
     try {
@@ -360,32 +508,32 @@ export const uploadOrderImages = async (req: Request, res: Response) => {
     const user = req.user!;
     const orderId = Number(req.params.orderId);
     const files = req.files as Express.Multer.File[];
-    const prompt =
-      req.body.prompt ?? "Enhance this real estate photo professionally";
-    const isCustomPrompt = req.body.isCustomPrompt === "true";
 
     if (!files?.length) {
       res.status(400).json({ message: "No images provided" });
       return;
     }
 
+    const imageMeta: { category: string; notes: string }[] = JSON.parse(
+      req.body.imageMeta ?? "[]",
+    );
     const jobIds: string[] = [];
 
     await Promise.all(
       files.map(async (file, index) => {
         const jobId = randomUUID();
+        const meta = imageMeta[index] ?? { category: "", notes: "" };
+        const { prompt, isCustomPrompt } = buildPrompt(
+          meta.category,
+          meta.notes,
+        );
 
-        // const inputKey = await uploadBufferToCloudinary(
-        //   file.buffer,
-        //   file.mimetype,
-        //   "propenhance/originals",
-        // );
         const inputKey = await uploadBufferToGCS(
           file.buffer,
           file.mimetype,
           `originals/${jobId}-${file.originalname}`,
         );
-        console.log(`☁️  [${index + 1}/${files.length}] Cloudinary:`, inputKey);
+        console.log(`☁️  [${index + 1}/${files.length}] GCS:`, inputKey);
 
         const [image] = await db
           .insert(images)
@@ -398,10 +546,11 @@ export const uploadOrderImages = async (req: Request, res: Response) => {
             mimeType: file.mimetype,
             fileSizeBytes: file.size,
             sortOrder: index,
+            category: meta.category || null,
+            clientNotes: meta.notes || null,
           })
           .returning();
 
-        // 3 — Create job linked to image
         await db.insert(jobs).values({
           id: jobId,
           imageId: image.id,
@@ -414,7 +563,6 @@ export const uploadOrderImages = async (req: Request, res: Response) => {
 
         jobIds.push(jobId);
 
-        // 4 — Send to SHIFT-N, fallback to Gemini
         try {
           await sendToShiftn(inputKey, jobId);
           console.log(`📐 SHIFT-N accepted job: ${jobId}`);
@@ -443,7 +591,7 @@ export const uploadOrderImages = async (req: Request, res: Response) => {
   }
 };
 
-// ── POST /api/images/shiftn-callback — unchanged ──────────────────────────────
+// ── POST /api/images/shiftn-callback ─────────────────────────────────────────
 
 export const shiftnCallback = async (req: Request, res: Response) => {
   try {
@@ -476,9 +624,11 @@ export const shiftnCallback = async (req: Request, res: Response) => {
 
     let imageBase64 = image;
     if (imageBase64.includes(",")) imageBase64 = imageBase64.split(",")[1];
-    const imageBuffer = Buffer.from(imageBase64, "base64");
-
-    await processWithGemini(requestId, imageBuffer, "image/jpeg");
+    await processWithGemini(
+      requestId,
+      Buffer.from(imageBase64, "base64"),
+      "image/jpeg",
+    );
   } catch (error: any) {
     console.error("Webhook error:", error);
   }
@@ -488,22 +638,20 @@ export const shiftnCallback = async (req: Request, res: Response) => {
 
 export const getJobStatus = async (req: Request, res: Response) => {
   try {
-    const { jobId } = req.params as { jobId: string };
+    const jobId = req.params.jobId as string;
     const [job] = await db
       .select()
       .from(jobs)
       .where(eq(jobs.id, jobId))
       .limit(1);
-
     if (!job) {
       res.status(404).json({ message: "Job not found" });
       return;
     }
-
     res.json({
       jobId: job.id,
       status: job.status,
-      resultUrl: job.resultKey, // keep response key as resultUrl for frontend compat
+      resultUrl: job.resultKey,
       error: job.error,
     });
   } catch {
@@ -534,25 +682,25 @@ export const getGallery = async (req: Request, res: Response) => {
         .orderBy(desc(jobs.createdAt))
         .limit(limit)
         .offset(offset),
-
       db
         .select({ count: sql<number>`count(*)` })
         .from(jobs)
         .where(eq(jobs.status, "completed")),
     ]);
 
+    const totalCount = Number(total[0].count);
     res.json({
       data: galleryJobs.map((j) => ({
         ...j,
-        originalUrl: j.inputKey, // alias for frontend compat
+        originalUrl: j.inputKey,
         resultUrl: j.resultKey,
       })),
       pagination: {
         page,
         limit,
-        total: Number(total[0].count),
-        totalPages: Math.ceil(Number(total[0].count) / limit),
-        hasNext: page < Math.ceil(Number(total[0].count) / limit),
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / limit),
+        hasNext: page < Math.ceil(totalCount / limit),
         hasPrev: page > 1,
       },
     });

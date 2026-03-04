@@ -1,30 +1,3 @@
-// import { pgTable, serial, text, timestamp, boolean } from "drizzle-orm/pg-core";
-
-// export const users = pgTable("users", {
-//   id: serial("id").primaryKey(),
-//   fullName: text("full_name").notNull(),
-//   email: text("email").notNull().unique(),
-//   passwordHash: text("password_hash").notNull(),
-//   emailVerified: boolean("email_verified").default(false).notNull(),
-//   emailVerifiedAt: timestamp("email_verified_at"),
-//   resetPasswordToken: text("reset_password_token"),
-//   resetPasswordTokenExpiresAt: timestamp("reset_password_token_expires_at"),
-//   createdAt: timestamp("created_at").defaultNow().notNull(),
-//   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-// });
-
-// export const jobs = pgTable("jobs", {
-//   id: text("id").primaryKey(),
-//   status: text("status").notNull().default("pending"),
-//   originalUrl: text("original_url").notNull(),
-//   resultUrl: text("result_url"),
-//   prompt: text("prompt").notNull(),
-//   isCustomPrompt: boolean("is_custom_prompt").default(false).notNull(),
-//   error: text("error"),
-//   createdAt: timestamp("created_at").defaultNow().notNull(),
-//   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-// });
-
 import {
   pgTable,
   serial,
@@ -36,9 +9,6 @@ import {
   pgEnum,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ENUMS
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const orderStatusEnum = pgEnum("order_status", [
@@ -164,9 +134,12 @@ export const images = pgTable("images", {
   deliveredKey: text("delivered_key"), // final approved version
   // Original file metadata
   originalFilename: text("original_filename").notNull(),
+  // schema.ts
+  category: text("category").default("Internal"),
+  clientNotes: text("client_notes"),
   mimeType: text("mime_type").notNull(),
   fileSizeBytes: integer("file_size_bytes"),
-  sortOrder: integer("sort_order").default(0).notNull(), // display order in order
+  sortOrder: integer("sort_order").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
