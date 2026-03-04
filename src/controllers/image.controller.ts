@@ -9,7 +9,10 @@ import {
   uploadBufferToGCS,
   uploadBase64ToGCS,
 } from "../services/storage.service";
-import { uploadBufferToCloudinary } from "../services/cloudinary.service";
+import {
+  uploadBase64ToCloudinary,
+  uploadBufferToCloudinary,
+} from "../services/cloudinary.service";
 
 const CATEGORY_PROMPTS: Record<string, string> = {
   Internal:
@@ -68,10 +71,15 @@ export const processWithGemini = async (
       job.isCustomPrompt ?? false,
     );
 
-    const resultKey = await uploadBase64ToGCS(
+    // const resultKey = await uploadBase64ToGCS(
+    //   editedImage,
+    //   "propenhance/results",
+    // );
+    const resultKey = await uploadBase64ToCloudinary(
       editedImage,
       "propenhance/results",
     );
+
     console.log("✅ Result uploaded:", resultKey);
 
     await db
