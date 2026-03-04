@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@google-cloud/storage": "^7.19.0",
     "@google/genai": "^1.43.0",
     "@neondatabase/serverless": "^1.0.2",
     "axios": "^1.13.5",

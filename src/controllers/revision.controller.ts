@@ -6,6 +6,7 @@ import { editImageWithVertex } from "../services/vertex.service";
 import { uploadBufferToCloudinary } from "../services/cloudinary.service";
 import { orderService } from "../services/order.service";
 import { randomUUID } from "crypto";
+import { uploadBufferToGCS } from "../services/storage.service";
 
 export const createRevisions = async (
   req: Request,
@@ -116,10 +117,16 @@ const processRevision = async ({
 
     // 7. Upload result to Cloudinary
     const resultBuffer = Buffer.from(editedImage, "base64");
-    const resultUrl = await uploadBufferToCloudinary(
+    // const resultUrl = await uploadBufferToCloudinary(
+    //   resultBuffer,
+    //   "image/png",
+    //   "propenhance/revisions",
+    // );
+
+    const resultUrl = await uploadBufferToGCS(
       resultBuffer,
       "image/png",
-      "propenhance/revisions",
+      `revisions/${randomUUID()}-${imageId}-rev${revisionNumber}.png`,
     );
 
     await db

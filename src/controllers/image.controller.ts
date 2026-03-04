@@ -222,6 +222,7 @@ import {
 } from "../services/cloudinary.service";
 import { sendToShiftn } from "../services/shiftn.service";
 import { editImageWithVertex } from "../services/vertex.service";
+import { uploadBufferToGCS } from "../services/storage.service";
 
 // ── Shared Gemini processing logic ────────────────────────────────────────────
 
@@ -312,10 +313,15 @@ export const processImage = async (req: Request, res: Response) => {
     const jobId = randomUUID();
 
     console.log("☁️  Uploading to Cloudinary...");
-    const inputKey = await uploadBufferToCloudinary(
+    // const inputKey = await uploadBufferToCloudinary(
+    //   file.buffer,
+    //   file.mimetype,
+    //   "propenhance/originals",
+    // );
+    const inputKey = await uploadBufferToGCS(
       file.buffer,
       file.mimetype,
-      "propenhance/originals",
+      `originals/${jobId}-${file.originalname}`,
     );
     console.log("☁️  Cloudinary URL:", inputKey);
 
@@ -369,15 +375,18 @@ export const uploadOrderImages = async (req: Request, res: Response) => {
       files.map(async (file, index) => {
         const jobId = randomUUID();
 
-        // 1 — Upload original to Cloudinary
-        const inputKey = await uploadBufferToCloudinary(
+        // const inputKey = await uploadBufferToCloudinary(
+        //   file.buffer,
+        //   file.mimetype,
+        //   "propenhance/originals",
+        // );
+        const inputKey = await uploadBufferToGCS(
           file.buffer,
           file.mimetype,
-          "propenhance/originals",
+          `originals/${jobId}-${file.originalname}`,
         );
         console.log(`☁️  [${index + 1}/${files.length}] Cloudinary:`, inputKey);
 
-        // 2 — Create image row
         const [image] = await db
           .insert(images)
           .values({

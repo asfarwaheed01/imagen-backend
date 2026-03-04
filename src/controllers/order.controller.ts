@@ -9,6 +9,7 @@ import { IMAGE_PRICING } from "../constants/pricing";
 import { orderService } from "../services/order.service";
 import { processWithGemini } from "./image.controller";
 import { eq } from "drizzle-orm";
+import { uploadBufferToGCS } from "../services/storage.service";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: "2026-02-25.clover",
@@ -127,10 +128,15 @@ const processUploadedImage = async ({
 
   // 1. Upload original to Cloudinary
   console.log(`☁️  Uploading image ${index + 1} to Cloudinary...`);
-  const originalUrl = await uploadBufferToCloudinary(
+  // const originalUrl = await uploadBufferToCloudinary(
+  //   file.buffer,
+  //   file.mimetype,
+  //   "propenhance/originals",
+  // );
+  const originalUrl = await uploadBufferToGCS(
     file.buffer,
     file.mimetype,
-    "propenhance/originals",
+    `originals/${jobId}-${file.originalname}`,
   );
   console.log(`☁️  Cloudinary URL: ${originalUrl}`);
 

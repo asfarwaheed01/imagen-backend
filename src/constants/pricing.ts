@@ -1,7 +1,3 @@
-export const IMAGE_PRICING: Record<number, number> = {
-  2: 32,
-  5: 75,
-  10: 140,
-  20: 260,
-  50: 600,
-};
+export const IMAGE_PRICING: Record<number, number> = Object.fromEntries(
+  Array.from({ length: 50 }, (_, i) => [i + 1, (i + 1) * 16]),
+);
