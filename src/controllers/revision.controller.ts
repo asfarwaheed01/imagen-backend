@@ -127,17 +127,6 @@ const processRevision = async ({
       .set({ status: "completed", resultKey: resultUrl })
       .where(eq(revisions.id, revision.id));
 
-    await db.insert(jobs).values({
-      id: randomUUID(),
-      imageId,
-      type: "ai_edit",
-      status: "completed",
-      inputKey: sourceKey,
-      resultKey: resultUrl,
-      prompt: finalPrompt,
-      isCustomPrompt: true,
-    });
-
     console.log(`✅ Revision ${revisionNumber} completed for image ${imageId}`);
   } catch (err: any) {
     await db

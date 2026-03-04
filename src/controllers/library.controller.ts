@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { db } from "../db";
 import { properties, orders, images, jobs, revisions } from "../db/schema";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, inArray } from "drizzle-orm";
 
 export const getLibrary = async (
   req: Request,
@@ -111,11 +111,14 @@ export const getOrderDetail = async (
         jobError: jobs.error,
       })
       .from(images)
-      .leftJoin(jobs, eq(jobs.imageId, images.id))
+      .leftJoin(
+        jobs,
+        and(eq(jobs.imageId, images.id), eq(jobs.type, "straighten")),
+      )
       .where(eq(images.orderId, orderId))
       .orderBy(images.sortOrder);
 
-    const imageIds = orderImages.map((i) => i.imageId);
+    const imageIds = [...new Set(orderImages.map((i) => i.imageId))];
 
     const imageRevisions =
       imageIds.length > 0
@@ -130,8 +133,8 @@ export const getOrderDetail = async (
               createdAt: revisions.createdAt,
             })
             .from(revisions)
-            .where(eq(revisions.imageId, imageIds[0]))
-            .orderBy(desc(revisions.revisionNumber))
+            .where(inArray(revisions.imageId, imageIds))
+            .orderBy(revisions.revisionNumber)
         : [];
 
     const revisionsMap = new Map<number, any[]>();
