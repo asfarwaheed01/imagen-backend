@@ -6,8 +6,9 @@ import {
   getOrderStatus,
 } from "../controllers/order.controller";
 import { isAuthenticated } from "../middlewares/auth.middleware";
+import { createRevisions } from "../controllers/revision.controller";
 
-const router = Router();
+const router = Router({ mergeParams: true });
 const upload = multer({ storage: multer.memoryStorage() });
 
 router.post("/create-payment-intent", isAuthenticated, createPaymentIntent);
@@ -18,5 +19,6 @@ router.post(
   uploadOrderImages,
 );
 router.get("/:orderId/status", isAuthenticated, getOrderStatus);
+router.post("/:orderId/revisions", isAuthenticated, createRevisions);
 
 export default router;
