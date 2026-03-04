@@ -117,17 +117,17 @@ const processRevision = async ({
 
     // 7. Upload result to Cloudinary
     const resultBuffer = Buffer.from(editedImage, "base64");
-    // const resultUrl = await uploadBufferToCloudinary(
-    //   resultBuffer,
-    //   "image/png",
-    //   "propenhance/revisions",
-    // );
-
-    const resultUrl = await uploadBufferToGCS(
+    const resultUrl = await uploadBufferToCloudinary(
       resultBuffer,
       "image/png",
-      `revisions/${randomUUID()}-${imageId}-rev${revisionNumber}.png`,
+      "propenhance/revisions",
     );
+
+    // const resultUrl = await uploadBufferToGCS(
+    //   resultBuffer,
+    //   "image/png",
+    //   `revisions/${randomUUID()}-${imageId}-rev${revisionNumber}.png`,
+    // );
 
     await db
       .update(revisions)

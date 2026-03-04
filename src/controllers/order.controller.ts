@@ -128,16 +128,16 @@ const processUploadedImage = async ({
 
   // 1. Upload original to Cloudinary
   console.log(`☁️  Uploading image ${index + 1} to Cloudinary...`);
-  // const originalUrl = await uploadBufferToCloudinary(
-  //   file.buffer,
-  //   file.mimetype,
-  //   "propenhance/originals",
-  // );
-  const originalUrl = await uploadBufferToGCS(
+  const originalUrl = await uploadBufferToCloudinary(
     file.buffer,
     file.mimetype,
-    `originals/${jobId}-${file.originalname}`,
+    "propenhance/originals",
   );
+  // const originalUrl = await uploadBufferToGCS(
+  //   file.buffer,
+  //   file.mimetype,
+  //   `originals/${jobId}-${file.originalname}`,
+  // );
   console.log(`☁️  Cloudinary URL: ${originalUrl}`);
 
   const [image] = await db
