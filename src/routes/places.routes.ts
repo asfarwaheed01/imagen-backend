@@ -31,7 +31,6 @@ router.get("/autocomplete", async (req: Request, res: Response) => {
     );
 
     const data = await response.json();
-    console.log("Places autocomplete raw:", JSON.stringify(data));
 
     const suggestions = (data.suggestions ?? []).map((s: any) => {
       const p = s.placePrediction;

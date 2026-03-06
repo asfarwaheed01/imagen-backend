@@ -13,18 +13,8 @@ import {
   uploadBase64ToCloudinary,
   uploadBufferToCloudinary,
 } from "../services/cloudinary.service";
+import { CATEGORY_PROMPTS } from "../constants/prompts";
 
-const CATEGORY_PROMPTS: Record<string, string> = {
-  Internal:
-    "Enhance this interior real estate photo. Improve lighting, white balance, and clarity. Make the space look bright, clean and inviting.",
-  "External Day":
-    "Enhance this exterior daytime real estate photo. Improve the sky, lawn, and facade. Make it look sharp and well-presented.",
-  Dusk: "Enhance this dusk real estate photo. Enrich the warm golden tones and balance interior and exterior lighting for a premium twilight look.",
-  Drone:
-    "Enhance this aerial drone real estate photo. Improve colour, contrast and sharpness. Make the property and surroundings look impressive.",
-  "Day to Dusk":
-    "Convert this daytime exterior photo to a realistic dusk/twilight scene. Add warm interior lighting glows, a dramatic dusk sky, and ambient outdoor lighting.",
-};
 
 const DEFAULT_PROMPT =
   "Enhance the general quality of this real estate photo. Improve lighting, colour accuracy, and sharpness.";
