@@ -15,6 +15,7 @@ const ai = new GoogleGenAI({
   apiVersion: "v1",
   httpOptions: {
     baseUrl: "https://aiplatform.googleapis.com",
+    timeout: 600000,
   },
 });
 
