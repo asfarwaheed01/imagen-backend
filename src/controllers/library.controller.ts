@@ -103,6 +103,7 @@ export const getOrderDetail = async (
         deliveredKey: images.deliveredKey,
         originalFilename: images.originalFilename,
         sortOrder: images.sortOrder,
+        category: images.category,
         createdAt: images.createdAt,
         jobId: jobs.id,
         jobType: jobs.type,
@@ -152,6 +153,7 @@ export const getOrderDetail = async (
       deliveredKey: img.deliveredKey,
       originalFilename: img.originalFilename,
       sortOrder: img.sortOrder,
+      category: img.category, 
       createdAt: img.createdAt,
       job: img.jobId
         ? {
