@@ -31,13 +31,34 @@ export const uploadImageBufferToCloudinary = async (
   });
 };
 
-export const uploadBufferToCloudinary = async (
+// export const uploadBufferToCloudinary = async (
+//   buffer: Buffer,
+//   mimeType: string,
+//   folder: string = "propenhance",
+// ): Promise<string> => {
+//   const base64 = buffer.toString("base64");
+//   const dataUri = `data:${mimeType};base64,${base64}`;
+//   const result = await cloudinary.uploader.upload(dataUri, { folder });
+//   return result.secure_url;
+// };
+
+export const uploadBufferToCloudinary = (
   buffer: Buffer,
   mimeType: string,
   folder: string = "propenhance",
 ): Promise<string> => {
-  const base64 = buffer.toString("base64");
-  const dataUri = `data:${mimeType};base64,${base64}`;
-  const result = await cloudinary.uploader.upload(dataUri, { folder });
-  return result.secure_url;
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder,
+        resource_type: "auto",
+        chunk_size: 6_000_000,
+      },
+      (error, result) => {
+        if (error || !result) return reject(error);
+        resolve(result.secure_url);
+      },
+    );
+    stream.end(buffer);
+  });
 };
