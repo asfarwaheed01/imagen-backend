@@ -11,6 +11,7 @@ import { isAuthenticated } from "./middlewares/auth.middleware";
 import webhookRoutes from "./routes/webhook.routes";
 import libraryRoutes from "./routes/library.routes";
 import placesRoutes from "./routes/places.routes";
+import uploadRoutes from "./routes/upload.routes";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -55,6 +56,7 @@ app.get("/me", isAuthenticated, (req, res) => {
 });
 
 app.use("/api/images", imageRoutes);
+app.use("/api/upload", uploadRoutes);
 
 app.use("/api/auth", authRoutes);
 app.use("/api/orders", orderRoutes);

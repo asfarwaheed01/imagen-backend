@@ -95,7 +95,6 @@ const processRevision = async ({
     .returning();
 
   try {
-    // 5. Fetch source image buffer from Cloudinary URL
     console.log(`🔄 Fetching source image for revision: ${sourceKey}`);
     const response = await fetch(sourceKey);
     if (!response.ok)
@@ -117,17 +116,17 @@ const processRevision = async ({
 
     // 7. Upload result to Cloudinary
     const resultBuffer = Buffer.from(editedImage, "base64");
-    const resultUrl = await uploadBufferToCloudinary(
-      resultBuffer,
-      "image/png",
-      "propenhance/revisions",
-    );
-
-    // const resultUrl = await uploadBufferToGCS(
+    // const resultUrl = await uploadBufferToCloudinary(
     //   resultBuffer,
     //   "image/png",
-    //   `revisions/${randomUUID()}-${imageId}-rev${revisionNumber}.png`,
+    //   "propenhance/revisions",
     // );
+
+    const resultUrl = await uploadBufferToGCS(
+      resultBuffer,
+      "image/png",
+      `revisions/${randomUUID()}-${imageId}-rev${revisionNumber}.png`,
+    );
 
     await db
       .update(revisions)

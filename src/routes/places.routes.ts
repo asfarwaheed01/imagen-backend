@@ -65,7 +65,6 @@ router.get("/details", async (req: Request, res: Response) => {
     );
 
     const data = await response.json();
-    console.log("Places details raw:", JSON.stringify(data));
 
     const components: any[] = data.addressComponents ?? [];
     const stateComponent = components.find((c) =>

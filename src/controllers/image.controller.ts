@@ -14,7 +14,7 @@ import {
   uploadBufferToCloudinary,
 } from "../services/cloudinary.service";
 import { CATEGORY_PROMPTS } from "../constants/prompts";
-
+import axios from "axios";
 
 const DEFAULT_PROMPT =
   "Enhance the general quality of this real estate photo. Improve lighting, colour accuracy, and sharpness.";
@@ -37,8 +37,8 @@ const buildPrompt = (
 
 export const processWithGemini = async (
   jobId: string,
-  imageBuffer: Buffer,
-  mimeType: string,
+  imageSource: Buffer | string, 
+  mimeType = "image/jpeg",
 ) => {
   try {
     const [job] = await db
@@ -54,6 +54,18 @@ export const processWithGemini = async (
       .set({ status: "enhancing", updatedAt: new Date() })
       .where(eq(jobs.id, jobId));
 
+    let imageBuffer: Buffer;
+
+    if (Buffer.isBuffer(imageSource)) {
+      imageBuffer = imageSource;
+    } else {
+      const response = await axios.get(imageSource, {
+        responseType: "arraybuffer",
+      });
+      imageBuffer = Buffer.from(response.data);
+      mimeType = response.headers["content-type"] ?? "image/jpeg";
+    }
+
     const { editedImage } = await editImageWithVertex(
       imageBuffer,
       mimeType,
@@ -61,14 +73,7 @@ export const processWithGemini = async (
       job.isCustomPrompt ?? false,
     );
 
-    // const resultKey = await uploadBase64ToGCS(
-    //   editedImage,
-    //   "propenhance/results",
-    // );
-    const resultKey = await uploadBase64ToCloudinary(
-      editedImage,
-      "propenhance/results",
-    );
+    const resultKey = await uploadBase64ToGCS(editedImage, "results");
 
     console.log("✅ Result uploaded:", resultKey);
 
@@ -95,6 +100,7 @@ export const processWithGemini = async (
       .from(jobs)
       .where(eq(jobs.id, jobId))
       .limit(1);
+
     if (failedJob?.imageId) {
       await db
         .update(images)
@@ -119,16 +125,16 @@ export const processImage = async (req: Request, res: Response) => {
     const jobId = randomUUID();
     const { prompt, isCustomPrompt } = buildPrompt(category, notes);
 
-    // const inputKey = await uploadBufferToGCS(
-    //   file.buffer,
-    //   file.mimetype,
-    //   `originals/${jobId}-${file.originalname}`,
-    // );
-    const inputKey = await uploadBufferToCloudinary(
+    const inputKey = await uploadBufferToGCS(
       file.buffer,
       file.mimetype,
-      "propenhance/originals",
+      `originals/${jobId}-${file.originalname}`,
     );
+    // const inputKey = await uploadBufferToCloudinary(
+    //   file.buffer,
+    //   file.mimetype,
+    //   "propenhance/originals",
+    // );
     console.log("☁️  GCS:", inputKey);
 
     await db.insert(jobs).values({
@@ -159,26 +165,24 @@ export const processImage = async (req: Request, res: Response) => {
   }
 };
 
-// ── POST /api/orders/:orderId/images — bulk upload after payment ──────────────
-
 export const uploadOrderImages = async (req: Request, res: Response) => {
   try {
     const user = req.user!;
     const orderId = Number(req.params.orderId);
-    const files = req.files as Express.Multer.File[];
 
-    if (!files?.length) {
-      res.status(400).json({ message: "No images provided" });
+    const gcpUrls: string[] = req.body.gcpUrls ?? [];
+    const imageMeta: { category: string; notes: string }[] =
+      req.body.imageMeta ?? [];
+
+    if (!gcpUrls.length) {
+      res.status(400).json({ message: "No image URLs provided" });
       return;
     }
 
-    const imageMeta: { category: string; notes: string }[] = JSON.parse(
-      req.body.imageMeta ?? "[]",
-    );
     const jobIds: string[] = [];
 
     await Promise.all(
-      files.map(async (file, index) => {
+      gcpUrls.map(async (inputKey, index) => {
         const jobId = randomUUID();
         const meta = imageMeta[index] ?? { category: "", notes: "" };
         const { prompt, isCustomPrompt } = buildPrompt(
@@ -186,17 +190,12 @@ export const uploadOrderImages = async (req: Request, res: Response) => {
           meta.notes,
         );
 
-        // const inputKey = await uploadBufferToGCS(
-        //   file.buffer,
-        //   file.mimetype,
-        //   `originals/${jobId}-${file.originalname}`,
-        // );
-        const inputKey = await uploadBufferToCloudinary(
-          file.buffer,
-          file.mimetype,
-          "propenhance/originals",
-        );
-        console.log(`☁️  [${index + 1}/${files.length}] GCS:`, inputKey);
+        const originalFilename = inputKey.split("/").pop() ?? `image-${index}`;
+        const mimeType = originalFilename.endsWith(".jpg")
+          ? "image/jpeg"
+          : "image/png";
+
+        console.log(`☁️  [${index + 1}/${gcpUrls.length}] GCS:`, inputKey);
 
         const [image] = await db
           .insert(images)
@@ -205,9 +204,9 @@ export const uploadOrderImages = async (req: Request, res: Response) => {
             userId: user.id,
             status: "uploaded",
             originalKey: inputKey,
-            originalFilename: file.originalname,
-            mimeType: file.mimetype,
-            fileSizeBytes: file.size,
+            originalFilename,
+            mimeType,
+            fileSizeBytes: 0,
             sortOrder: index,
             category: meta.category || null,
             clientNotes: meta.notes || null,
@@ -238,7 +237,7 @@ export const uploadOrderImages = async (req: Request, res: Response) => {
             "⚠️ SHIFT-N failed, processing directly:",
             shiftnError.message,
           );
-          await processWithGemini(jobId, file.buffer, file.mimetype);
+          await processWithGemini(jobId, inputKey);
         }
       }),
     );
@@ -246,7 +245,7 @@ export const uploadOrderImages = async (req: Request, res: Response) => {
     res.json({
       message: "Images queued for processing",
       jobIds,
-      count: files.length,
+      count: gcpUrls.length,
     });
   } catch (error: any) {
     console.error("Bulk upload error:", error?.response?.data || error);
