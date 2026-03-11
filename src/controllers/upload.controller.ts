@@ -28,7 +28,10 @@ function getExt(filename: string): string {
 async function convertViaSharp(buffer: Buffer): Promise<Buffer> {
   return sharp(buffer, { failOn: "none" })
     .rotate() // honour EXIF orientation
-    .jpeg({ quality: 90 })
+    .png({
+      compressionLevel: 0, // no compression — fastest, lossless
+      effort: 1,
+    })
     .toBuffer();
 }
 
@@ -81,11 +84,9 @@ export const uploadTempImage = async (
     }
 
     if (file.size > MAX_FILE_SIZE) {
-      res
-        .status(413)
-        .json({
-          error: `File exceeds ${MAX_FILE_SIZE / 1024 / 1024} MB limit`,
-        });
+      res.status(413).json({
+        error: `File exceeds ${MAX_FILE_SIZE / 1024 / 1024} MB limit`,
+      });
       return;
     }
 
@@ -98,10 +99,10 @@ export const uploadTempImage = async (
     let storageName = file.originalname;
 
     if (SHARP_RAW.has(ext)) {
-      // Convert locally — no network call needed
+      // Convert locally to lossless PNG — JPEG is lossy even at quality 100
       uploadBuffer = await convertViaSharp(file.buffer);
-      mimeType = "image/jpeg";
-      storageName = file.originalname.replace(/\.[^.]+$/, ".jpg");
+      mimeType = "image/png";
+      storageName = file.originalname.replace(/\.[^.]+$/, ".png");
     } else if (API_RAW.has(ext)) {
       // CR3/CR2 — delegate to external API
       uploadBuffer = await convertViaCr3Api(file.buffer, file.originalname);
