@@ -16,6 +16,26 @@ import {
 import { CATEGORY_PROMPTS } from "../constants/prompts";
 import axios from "axios";
 
+let geminiLocked = false;
+const geminiQueue: Array<() => void> = [];
+
+const acquireGemini = (): Promise<void> =>
+  new Promise((resolve) => {
+    if (!geminiLocked) {
+      geminiLocked = true;
+      resolve();
+    } else {
+      console.log("⏳ Gemini busy — queuing job");
+      geminiQueue.push(resolve);
+    }
+  });
+
+const releaseGemini = () => {
+  const next = geminiQueue.shift();
+  if (next) next();
+  else geminiLocked = false;
+};
+
 const DEFAULT_PROMPT =
   "Enhance the general quality of this real estate photo. Improve lighting, colour accuracy, and sharpness.";
 
@@ -37,7 +57,7 @@ const buildPrompt = (
 
 export const processWithGemini = async (
   jobId: string,
-  imageSource: Buffer | string, 
+  imageSource: Buffer | string,
   mimeType = "image/jpeg",
 ) => {
   try {
@@ -66,12 +86,28 @@ export const processWithGemini = async (
       mimeType = response.headers["content-type"] ?? "image/jpeg";
     }
 
-    const { editedImage } = await editImageWithVertex(
-      imageBuffer,
-      mimeType,
-      job.prompt ?? "",
-      job.isCustomPrompt ?? false,
-    );
+    // const { editedImage } = await editImageWithVertex(
+    //   imageBuffer,
+    //   mimeType,
+    //   job.prompt ?? "",
+    //   job.isCustomPrompt ?? false,
+    // );
+
+    await acquireGemini();
+    console.log(`🔒 Gemini lock acquired for job: ${jobId}`);
+    let editedImage: string;
+    try {
+      const result = await editImageWithVertex(
+        imageBuffer,
+        mimeType,
+        job.prompt ?? "",
+        job.isCustomPrompt ?? false,
+      );
+      editedImage = result.editedImage;
+    } finally {
+      releaseGemini();
+      console.log(`🔓 Gemini lock released for job: ${jobId}`);
+    }
 
     const resultKey = await uploadBase64ToGCS(editedImage, "results");
 
