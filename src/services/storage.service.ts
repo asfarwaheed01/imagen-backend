@@ -130,21 +130,12 @@ export async function generateSignedUploadUrl(
   const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
   const key = `${folder}/${Date.now()}-${safeName}`;
 
-  // 1. Get the Client
   const client = await auth.getClient();
-
-  // 2. Resolve the Project ID
-  const projectId = await auth.getProjectId();
-
-  // 3. Resolve Identity
-  // When using personal ADC (your Gmail), client_email is usually undefined.
-  // We fallback to the default Compute/AppEngine service account for that project.
-  let serviceAccountEmail = (await auth.getCredentials()).client_email;
+  const credentials = await auth.getCredentials();
+  const serviceAccountEmail = credentials.client_email || (client as any).email;
 
   if (!serviceAccountEmail) {
-    // Standard default service account format for GCP projects
-    serviceAccountEmail = `${projectId}@appspot.gserviceaccount.com`;
-    console.log(`Using default identity: ${serviceAccountEmail}`);
+    throw new Error("Could not resolve service account email.");
   }
 
   const signOptions = {
@@ -154,35 +145,20 @@ export async function generateSignedUploadUrl(
     contentType,
     issuer: serviceAccountEmail,
     signBytes: async (bytes: Buffer) => {
-      const tokenResponse = await client.getAccessToken();
-      const accessToken = tokenResponse.token;
-
-      const res = await fetch(
-        `https://iam.googleapis.com/v1/projects/-/serviceAccounts/${serviceAccountEmail}:signBlob`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ payload: bytes.toString("base64") }),
+      const res = await client.request({
+        url: `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${serviceAccountEmail}:signBlob`,
+        method: "POST",
+        data: {
+          payload: bytes.toString("base64"),
         },
-      );
+      });
 
-      if (!res.ok) {
-        const body = await res.text();
-        throw new Error(
-          `IAM signBlob failed: ${res.status} ${body}. Check if Service Account Token Creator role is assigned.`,
-        );
-      }
-
-      const { signedBlob } = await res.json();
+      const { signedBlob } = res.data as { signedBlob: string };
       return Buffer.from(signedBlob, "base64");
     },
   } as any;
 
-  const response = await bucket.file(key).getSignedUrl(signOptions);
-  const uploadUrl = response[0] as string;
+  const [uploadUrl] = await bucket.file(key).getSignedUrl(signOptions);
 
   return {
     uploadUrl,
