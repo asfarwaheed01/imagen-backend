@@ -132,11 +132,11 @@ export async function generateSignedUploadUrl(
 
   const client = await auth.getClient();
   const credentials = await auth.getCredentials();
-  const serviceAccountEmail = credentials.client_email || (client as any).email;
 
-  if (!serviceAccountEmail) {
-    throw new Error("Could not resolve service account email.");
-  }
+  const serviceAccountEmail =
+    credentials.client_email ||
+    (client as any).email ||
+    "586886091897-compute@developer.gserviceaccount.com";
 
   const signOptions = {
     version: "v4",
@@ -145,16 +145,29 @@ export async function generateSignedUploadUrl(
     contentType,
     issuer: serviceAccountEmail,
     signBytes: async (bytes: Buffer) => {
-      const res = await client.request({
-        url: `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${serviceAccountEmail}:signBlob`,
+      const tokenResponse = await client.getAccessToken();
+      const token = tokenResponse.token;
+
+      const url = `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${serviceAccountEmail}:signBlob`;
+
+      console.log(`[getSignedUploadUrl] Attempting signBlob at: ${url}`);
+
+      const res = await fetch(url, {
         method: "POST",
-        data: {
-          payload: bytes.toString("base64"),
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
         },
+        body: JSON.stringify({ payload: bytes.toString("base64") }),
       });
 
-      const { signedBlob } = res.data as { signedBlob: string };
-      return Buffer.from(signedBlob, "base64");
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`IAM signBlob failed: ${res.status} ${errorText}`);
+      }
+
+      const data = (await res.json()) as { signedBlob: string };
+      return Buffer.from(data.signedBlob, "base64");
     },
   } as any;
 
