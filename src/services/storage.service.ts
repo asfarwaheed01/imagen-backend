@@ -11,6 +11,7 @@ const auth = new GoogleAuth({
 const storage = new Storage({
   projectId: process.env.GCLOUD_PROJECT_ID,
   authClient: auth as any,
+  universeDomain: "googleapis.com",
 });
 const bucket = storage.bucket(process.env.GOOGLE_CLOUD_BUCKET_NAME!);
 const BUCKET_NAME = process.env.GOOGLE_CLOUD_BUCKET_NAME!;
@@ -130,13 +131,12 @@ export async function generateSignedUploadUrl(
   const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
   const key = `${folder}/${Date.now()}-${safeName}`;
 
-  const client = await auth.getClient();
   const credentials = await auth.getCredentials();
+  const serviceAccountEmail = credentials.client_email;
 
-  const serviceAccountEmail =
-    credentials.client_email ||
-    (client as any).email ||
-    "586886091897-compute@developer.gserviceaccount.com";
+  if (!serviceAccountEmail) {
+    throw new Error("Could not resolve service account email from ADC");
+  }
 
   const signOptions = {
     version: "v4",
@@ -144,34 +144,10 @@ export async function generateSignedUploadUrl(
     expires: Date.now() + 10 * 60 * 1000,
     contentType,
     issuer: serviceAccountEmail,
-    signBytes: async (bytes: Buffer) => {
-      const tokenResponse = await client.getAccessToken();
-      const token = tokenResponse.token;
-
-      const url = `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${serviceAccountEmail}:signBlob`;
-
-      console.log(`[getSignedUploadUrl] Attempting signBlob at: ${url}`);
-
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ payload: bytes.toString("base64") }),
-      });
-
-      if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(`IAM signBlob failed: ${res.status} ${errorText}`);
-      }
-
-      const data = (await res.json()) as { signedBlob: string };
-      return Buffer.from(data.signedBlob, "base64");
-    },
   } as any;
 
-  const [uploadUrl] = await bucket.file(key).getSignedUrl(signOptions);
+  const response = await bucket.file(key).getSignedUrl(signOptions);
+  const uploadUrl = response[0] as string;
 
   return {
     uploadUrl,
