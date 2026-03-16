@@ -1,9 +1,19 @@
 import { Storage } from "@google-cloud/storage";
 import { v4 as uuid } from "uuid";
 import path from "path";
+import { GoogleAuth } from "google-auth-library";
 
-const storage = new Storage({ projectId: process.env.GCLOUD_PROJECT_ID });
+const auth = new GoogleAuth({
+  scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+});
+
+// const storage = new Storage({ projectId: process.env.GCLOUD_PROJECT_ID });
+const storage = new Storage({
+  projectId: process.env.GCLOUD_PROJECT_ID,
+  authClient: auth as any,
+});
 const bucket = storage.bucket(process.env.GOOGLE_CLOUD_BUCKET_NAME!);
+const BUCKET_NAME = process.env.GOOGLE_CLOUD_BUCKET_NAME!;
 
 // ── MIME maps ─────────────────────────────────────────────────────────────────
 
@@ -23,7 +33,6 @@ const EXT_TO_MIME: Record<string, string> = {
   webp: "image/webp",
   heic: "image/heic",
   gif: "image/gif",
-  // RAW camera formats
   cr3: "application/octet-stream",
   cr2: "application/octet-stream",
   dng: "application/octet-stream",
@@ -111,4 +120,72 @@ export async function uploadBase64ToGCS(
 ): Promise<string> {
   const buffer = Buffer.from(base64, "base64");
   return uploadBufferToGCS(buffer, "image/png", folder);
+}
+
+export async function generateSignedUploadUrl(
+  folder: string,
+  filename: string,
+  contentType: string,
+): Promise<{ uploadUrl: string; fileUrl: string }> {
+  const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const key = `${folder}/${Date.now()}-${safeName}`;
+
+  // 1. Get the Client
+  const client = await auth.getClient();
+
+  // 2. Resolve the Project ID
+  const projectId = await auth.getProjectId();
+
+  // 3. Resolve Identity
+  // When using personal ADC (your Gmail), client_email is usually undefined.
+  // We fallback to the default Compute/AppEngine service account for that project.
+  let serviceAccountEmail = (await auth.getCredentials()).client_email;
+
+  if (!serviceAccountEmail) {
+    // Standard default service account format for GCP projects
+    serviceAccountEmail = `${projectId}@appspot.gserviceaccount.com`;
+    console.log(`Using default identity: ${serviceAccountEmail}`);
+  }
+
+  const signOptions = {
+    version: "v4",
+    action: "write",
+    expires: Date.now() + 10 * 60 * 1000,
+    contentType,
+    issuer: serviceAccountEmail,
+    signBytes: async (bytes: Buffer) => {
+      const tokenResponse = await client.getAccessToken();
+      const accessToken = tokenResponse.token;
+
+      const res = await fetch(
+        `https://iam.googleapis.com/v1/projects/-/serviceAccounts/${serviceAccountEmail}:signBlob`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ payload: bytes.toString("base64") }),
+        },
+      );
+
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(
+          `IAM signBlob failed: ${res.status} ${body}. Check if Service Account Token Creator role is assigned.`,
+        );
+      }
+
+      const { signedBlob } = await res.json();
+      return Buffer.from(signedBlob, "base64");
+    },
+  } as any;
+
+  const response = await bucket.file(key).getSignedUrl(signOptions);
+  const uploadUrl = response[0] as string;
+
+  return {
+    uploadUrl,
+    fileUrl: publicUrl(key),
+  };
 }

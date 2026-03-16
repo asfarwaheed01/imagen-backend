@@ -204,6 +204,7 @@ import {
   uploadBufferToGCS,
   deleteFromGCS,
   guessMimeFromPath,
+  generateSignedUploadUrl,
 } from "../services/storage.service";
 
 const MAX_FILE_SIZE = 60 * 1024 * 1024;
@@ -282,11 +283,9 @@ export const uploadTempImage = async (
     }
 
     if (file.size > MAX_FILE_SIZE) {
-      res
-        .status(413)
-        .json({
-          error: `File exceeds ${MAX_FILE_SIZE / 1024 / 1024} MB limit`,
-        });
+      res.status(413).json({
+        error: `File exceeds ${MAX_FILE_SIZE / 1024 / 1024} MB limit`,
+      });
       return;
     }
 
@@ -342,5 +341,30 @@ export const deleteTempImage = async (
   } catch (err: any) {
     console.error("[deleteTempImage]", err?.message);
     res.status(500).json({ error: "Delete failed" });
+  }
+};
+
+export const getSignedUploadUrl = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { filename, contentType } = req.query as Record<string, string>;
+
+    if (!filename || !contentType) {
+      res.status(400).json({ error: "filename and contentType are required" });
+      return;
+    }
+
+    const { uploadUrl, fileUrl } = await generateSignedUploadUrl(
+      "temp/previews",
+      filename,
+      contentType,
+    );
+
+    res.status(200).json({ uploadUrl, fileUrl });
+  } catch (err: any) {
+    console.error("[getSignedUploadUrl]", err?.message);
+    res.status(500).json({ error: "Could not generate signed URL" });
   }
 };

@@ -3,6 +3,7 @@ import multer from "multer";
 import {
   uploadTempImage,
   deleteTempImage,
+  getSignedUploadUrl,
 } from "../controllers/upload.controller";
 import { isAuthenticated } from "../middlewares/auth.middleware";
 
@@ -48,5 +49,7 @@ router.post(
   uploadTempImage,
 );
 router.delete("/temp-image", isAuthenticated, deleteTempImage);
+router.get("/signed-url", isAuthenticated, getSignedUploadUrl);
+
 
 export default router;
