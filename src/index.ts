@@ -63,7 +63,7 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/library", libraryRoutes);
 app.use("/api/places", placesRoutes);
 
-// ── Start Server ────────────────────────────────────────────
+
 const start = async () => {
   await checkDbConnection();
   app.listen(Number(PORT), "0.0.0.0", () => {
