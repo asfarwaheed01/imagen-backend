@@ -3,18 +3,24 @@ import { v4 as uuid } from "uuid";
 import path from "path";
 import { GoogleAuth } from "google-auth-library";
 
-const auth = new GoogleAuth({
+export const auth = new GoogleAuth({
   scopes: ["https://www.googleapis.com/auth/cloud-platform"],
 });
 
 // const storage = new Storage({ projectId: process.env.GCLOUD_PROJECT_ID });
 const storage = new Storage({
   projectId: process.env.GCLOUD_PROJECT_ID,
+  // authClient: auth as any,
+  // universeDomain: "googleapis.com",
+});
+
+export const signingStorage = new Storage({
+  projectId: process.env.GCLOUD_PROJECT_ID,
   authClient: auth as any,
   universeDomain: "googleapis.com",
 });
 const bucket = storage.bucket(process.env.GOOGLE_CLOUD_BUCKET_NAME!);
-const BUCKET_NAME = process.env.GOOGLE_CLOUD_BUCKET_NAME!;
+export const BUCKET_NAME = process.env.GOOGLE_CLOUD_BUCKET_NAME!;
 
 // ── MIME maps ─────────────────────────────────────────────────────────────────
 
@@ -60,7 +66,7 @@ function buildDestination(
   return `${folder}/${uuid()}.${ext}`;
 }
 
-function publicUrl(destination: string): string {
+export function publicUrl(destination: string): string {
   return `https://storage.googleapis.com/${process.env.GOOGLE_CLOUD_BUCKET_NAME}/${destination}`;
 }
 
@@ -127,27 +133,46 @@ export async function generateSignedUploadUrl(
   folder: string,
   filename: string,
   contentType: string,
+  serviceAccountEmail: string,
 ): Promise<{ uploadUrl: string; fileUrl: string }> {
   const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
   const key = `${folder}/${Date.now()}-${safeName}`;
 
-  const credentials = await auth.getCredentials();
-  const serviceAccountEmail = credentials.client_email;
-
-  if (!serviceAccountEmail) {
-    throw new Error("Could not resolve service account email from ADC");
-  }
+  const client = await auth.getClient();
 
   const signOptions = {
     version: "v4",
     action: "write",
-    expires: Date.now() + 10 * 60 * 1000,
+    expires: Date.now() + 15 * 60 * 1000,
     contentType,
     issuer: serviceAccountEmail,
+    signBytes: async (bytes: Buffer) => {
+      const url = `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${serviceAccountEmail}:signBlob`;
+      const tokenResponse = await client.getAccessToken();
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${tokenResponse.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ payload: bytes.toString("base64") }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`IAM signBlob failed: ${res.status} ${text}`);
+      }
+
+      const data = (await res.json()) as { signedBlob: string };
+      return Buffer.from(data.signedBlob, "base64");
+    },
   } as any;
 
-  const response = await bucket.file(key).getSignedUrl(signOptions);
-  const uploadUrl = response[0] as string;
+  const [uploadUrl] = await signingStorage
+    .bucket(BUCKET_NAME)
+    .file(key)
+    .getSignedUrl(signOptions);
 
   return {
     uploadUrl,

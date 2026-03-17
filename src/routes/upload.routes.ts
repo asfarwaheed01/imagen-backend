@@ -51,5 +51,4 @@ router.post(
 router.delete("/temp-image", isAuthenticated, deleteTempImage);
 router.get("/signed-url", isAuthenticated, getSignedUploadUrl);
 
-
 export default router;
