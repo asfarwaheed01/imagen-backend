@@ -1,20 +1,26 @@
 // import { Request, Response } from "express";
 // import axios from "axios";
-// import sharp from "sharp";
 // import {
 //   uploadBufferToGCS,
 //   deleteFromGCS,
 //   guessMimeFromPath,
+//   generateSignedUploadUrl,
 // } from "../services/storage.service";
 
 // const MAX_FILE_SIZE = 60 * 1024 * 1024;
 // const ALLOWED_FOLDER = "temp/previews";
 
-// // sharp/libvips handles these natively
-// const SHARP_RAW = new Set(["dng", "nef", "arw", "raf", "rw2", "orf", "pef"]);
-
-// // Canon legacy — need external conversion API
-// const API_RAW = new Set(["cr3", "cr2"]);
+// const RAW_EXTENSIONS = new Set([
+//   "cr3",
+//   "cr2",
+//   "dng",
+//   "nef",
+//   "arw",
+//   "raf",
+//   "rw2",
+//   "orf",
+//   "pef",
+// ]);
 
 // const RAW_CONVERSION_API =
 //   "https://image-service.beleef.com.au/api/v1/uploadCr3";
@@ -23,23 +29,9 @@
 //   return filename.split(".").pop()?.toLowerCase() ?? "";
 // }
 
-// // ── DNG / NEF / ARW etc. → JPEG via sharp ────────────────────────────────────
+// // ── RAW → JPEG via external API ───────────────────────────────────────────────
 
-// async function convertViaSharp(buffer: Buffer): Promise<Buffer> {
-//   return sharp(buffer, { failOn: "none" })
-//     .rotate() // honour EXIF orientation
-//     .png({
-//       compressionLevel: 0, // no compression — fastest, lossless
-//       effort: 1,
-//     })
-//     .toBuffer();
-// }
-
-// // ── CR3 / CR2 → JPEG via external API ────────────────────────────────────────
-// // Upload RAW to temp/raw/ first so the API has a URL to fetch from,
-// // then delete it once we have the JPEG back.
-
-// async function convertViaCr3Api(
+// async function convertViaApi(
 //   rawBuffer: Buffer,
 //   originalName: string,
 // ): Promise<Buffer> {
@@ -51,27 +43,14 @@
 //   );
 
 //   try {
-//     console.log("[convertViaCr3Api] tempUrl:", tempUrl);
-//     console.log("[convertViaCr3Api] originalName:", originalName);
-//     console.log("[convertViaCr3Api] bufferSize:", rawBuffer.length, "bytes");
-
 //     const { data } = await axios.post<{ base64Image: string }>(
 //       RAW_CONVERSION_API,
 //       { imageUrl: tempUrl },
 //       { timeout: 60_000 },
 //     );
 
-//     console.log(
-//       "[convertViaCr3Api] success, response keys:",
-//       Object.keys(data ?? {}),
-//     );
-
 //     if (!data?.base64Image) {
-//       console.error(
-//         "[convertViaCr3Api] full response body:",
-//         JSON.stringify(data),
-//       );
-//       throw new Error("CR3 API returned no image");
+//       throw new Error("RAW conversion API returned no image");
 //     }
 
 //     const base64 = data.base64Image.includes(",")
@@ -80,20 +59,16 @@
 
 //     return Buffer.from(base64, "base64");
 //   } catch (err: any) {
-//     console.error("━━━━━━━━━━ [convertViaCr3Api] FULL ERROR ━━━━━━━━━━");
-//     console.error("tempUrl sent to API:", tempUrl);
-//     console.error("HTTP status:", err?.response?.status);
-//     console.error("HTTP statusText:", err?.response?.statusText);
-//     console.error("Response headers:", JSON.stringify(err?.response?.headers));
-//     console.error("Response body:", JSON.stringify(err?.response?.data));
-//     console.error("Axios message:", err?.message);
-//     console.error("Stack:", err?.stack);
-//     console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+//     console.error("[convertViaApi] failed for:", originalName);
+//     console.error("[convertViaApi] status:", err?.response?.status);
+//     console.error("[convertViaApi] body:", JSON.stringify(err?.response?.data));
 //     throw err;
 //   } finally {
 //     await deleteFromGCS(tempUrl).catch(() => {});
 //   }
 // }
+
+// // ── POST /api/upload/temp-image ───────────────────────────────────────────────
 
 // export const uploadTempImage = async (
 //   req: Request,
@@ -122,34 +97,10 @@
 //         : guessMimeFromPath(file.originalname);
 //     let storageName = file.originalname;
 
-//     if (SHARP_RAW.has(ext)) {
-//       // DNG, NEF, ARW, RAF, RW2, ORF, PEF — sharp/libvips handles natively
-//       uploadBuffer = await convertViaSharp(file.buffer);
-//       mimeType = "image/png";
-//       storageName = file.originalname.replace(/\.[^.]+$/, ".png");
-//     } else if (API_RAW.has(ext)) {
-//       // CR3/CR2 — try sharp first, fall back to external API if sharp fails
-//       try {
-//         console.log(
-//           "[uploadTempImage] trying sharp for CR3/CR2:",
-//           file.originalname,
-//         );
-//         uploadBuffer = await convertViaSharp(file.buffer);
-//         mimeType = "image/png";
-//         storageName = file.originalname.replace(/\.[^.]+$/, ".png");
-//         console.log(
-//           "[uploadTempImage] sharp succeeded for:",
-//           file.originalname,
-//         );
-//       } catch (sharpErr: any) {
-//         console.warn(
-//           "[uploadTempImage] sharp failed for CR3, trying external API:",
-//           sharpErr?.message,
-//         );
-//         uploadBuffer = await convertViaCr3Api(file.buffer, file.originalname);
-//         mimeType = "image/jpeg";
-//         storageName = file.originalname.replace(/\.[^.]+$/, ".jpg");
-//       }
+//     if (RAW_EXTENSIONS.has(ext)) {
+//       uploadBuffer = await convertViaApi(file.buffer, file.originalname);
+//       mimeType = "image/jpeg";
+//       storageName = file.originalname.replace(/\.[^.]+$/, ".jpg");
 //     }
 
 //     const url = await uploadBufferToGCS(
@@ -158,15 +109,10 @@
 //       ALLOWED_FOLDER,
 //       storageName,
 //     );
+
 //     res.status(200).json({ url });
 //   } catch (err: any) {
-//     console.error("[uploadTempImage] status:", err?.response?.status);
-//     console.error(
-//       "[uploadTempImage] data:",
-//       JSON.stringify(err?.response?.data),
-//     );
-//     console.error("[uploadTempImage] message:", err?.message);
-//     console.error("[uploadTempImage] stack:", err?.stack);
+//     console.error("[uploadTempImage]", err?.message);
 //     res.status(500).json({ error: "Upload failed" });
 //   }
 // };
@@ -195,6 +141,31 @@
 //   } catch (err: any) {
 //     console.error("[deleteTempImage]", err?.message);
 //     res.status(500).json({ error: "Delete failed" });
+//   }
+// };
+
+// export const getSignedUploadUrl = async (
+//   req: Request,
+//   res: Response,
+// ): Promise<void> => {
+//   try {
+//     const { filename, contentType } = req.query as Record<string, string>;
+
+//     if (!filename || !contentType) {
+//       res.status(400).json({ error: "filename and contentType are required" });
+//       return;
+//     }
+
+//     const { uploadUrl, fileUrl } = await generateSignedUploadUrl(
+//       "temp/previews",
+//       filename,
+//       contentType,
+//     );
+
+//     res.status(200).json({ uploadUrl, fileUrl });
+//   } catch (err: any) {
+//     console.error("[getSignedUploadUrl]", err?.message);
+//     res.status(500).json({ error: "Could not generate signed URL" });
 //   }
 // };
 
@@ -344,25 +315,63 @@ export const deleteTempImage = async (
   }
 };
 
+// ── GET /api/upload/signed-url ────────────────────────────────────────────────
+
 export const getSignedUploadUrl = async (
   req: Request,
   res: Response,
 ): Promise<void> => {
   try {
-    const { filename, contentType } = req.query as Record<string, string>;
+    const { filename, contentType, fileUrl } = req.query as Record<
+      string,
+      string
+    >;
 
+    // ── Phase 2: RAW already uploaded to GCS → download, convert, re-upload ─
+    if (fileUrl) {
+      if (!fileUrl.includes(ALLOWED_FOLDER)) {
+        res.status(403).json({ error: "Forbidden path" });
+        return;
+      }
+
+      const response = await fetch(fileUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch file from GCS: ${response.status}`);
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const rawBuffer = Buffer.from(arrayBuffer);
+
+      const jpegBuffer = await convertViaApi(rawBuffer, filename ?? "file.raw");
+      const jpegName = (filename ?? "file").replace(/\.[^.]+$/, ".jpg");
+
+      const url = await uploadBufferToGCS(
+        jpegBuffer,
+        "image/jpeg",
+        ALLOWED_FOLDER,
+        jpegName,
+      );
+
+      // Remove the original RAW from GCS
+      deleteFromGCS(fileUrl).catch(() => {});
+
+      res.status(200).json({ url });
+      return;
+    }
+
+    // ── Phase 1: generate signed URL for direct GCS PUT ───────────────────
     if (!filename || !contentType) {
       res.status(400).json({ error: "filename and contentType are required" });
       return;
     }
 
-    const { uploadUrl, fileUrl } = await generateSignedUploadUrl(
-      "temp/previews",
+    const result = await generateSignedUploadUrl(
+      ALLOWED_FOLDER,
       filename,
       contentType,
     );
 
-    res.status(200).json({ uploadUrl, fileUrl });
+    res.status(200).json(result);
   } catch (err: any) {
     console.error("[getSignedUploadUrl]", err?.message);
     res.status(500).json({ error: "Could not generate signed URL" });
