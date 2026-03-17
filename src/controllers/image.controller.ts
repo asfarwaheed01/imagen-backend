@@ -30,10 +30,23 @@ const acquireGemini = (): Promise<void> =>
     }
   });
 
+// const releaseGemini = () => {
+//   const next = geminiQueue.shift();
+//   if (next) next();
+//   else geminiLocked = false;
+// };
+
 const releaseGemini = () => {
   const next = geminiQueue.shift();
-  if (next) next();
-  else geminiLocked = false;
+  if (next) {
+    console.log("🔓 Gemini job finished — entering 5s cooldown...");
+    setTimeout(() => {
+      console.log("🚀 Cooldown finished — starting next queued job");
+      next();
+    }, 5000);
+  } else {
+    geminiLocked = false;
+  }
 };
 
 const DEFAULT_PROMPT =
