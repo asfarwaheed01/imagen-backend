@@ -26,9 +26,13 @@ async function withGeminiRetry<T>(fn: () => Promise<T>): Promise<T> {
     try {
       return await fn();
     } catch (err: any) {
-      if (err?.status !== 429 || i === delays.length) throw err;
+      const is429 = err?.status === 429;
+      const isTimeout =
+        err?.message?.includes("fetch failed") ||
+        err?.cause?.message?.includes("Timeout");
+      if ((!is429 && !isTimeout) || i === delays.length) throw err;
       console.warn(
-        `[Gemini] 429 — retry ${i + 1}/${delays.length} in ${delays[i] / 1000}s`,
+        `[Gemini] ${is429 ? "429" : "timeout"} — retry ${i + 1}/${delays.length} in ${delays[i] / 1000}s`,
       );
       await new Promise((r) => setTimeout(r, delays[i]));
     }
@@ -127,7 +131,10 @@ export const processWithGemini = async (
     // );
 
     // await acquireGemini();
+    let lockAcquired = false;
     await waitForGlobalGeminiLock(jobId);
+    lockAcquired = true;
+
     console.log(`🔒 Gemini lock acquired for job: ${jobId}`);
     let editedImage: string;
     try {
@@ -149,9 +156,11 @@ export const processWithGemini = async (
     } finally {
       // releaseGemini();
       // console.log(`🔓 Gemini lock released for job: ${jobId}`);
-      await new Promise((r) => setTimeout(r, 15000));
-      await releaseGlobalGeminiLock();
-      console.log(`🔓 Global Gemini lock released for job: ${jobId}`);
+      if (lockAcquired) {
+        await new Promise((r) => setTimeout(r, 15000));
+        await releaseGlobalGeminiLock();
+        console.log(`🔓 Global Gemini lock released for job: ${jobId}`);
+      }
     }
 
     const resultKey = await uploadBase64ToGCS(editedImage, "results");
@@ -171,6 +180,23 @@ export const processWithGemini = async (
     }
   } catch (error: any) {
     console.error("Gemini processing error:", error);
+
+    const is429 =
+      error?.status === 429 || error?.message?.includes("RESOURCE_EXHAUSTED");
+    const isTimeout =
+      error?.message?.includes("fetch failed") ||
+      error?.cause?.message?.includes("Timeout");
+
+    if (is429 || isTimeout) {
+      console.warn(`⏳ [${jobId}] Retryable error — re-queuing in 60s`);
+      await db
+        .update(jobs)
+        .set({ status: "pending", updatedAt: new Date() })
+        .where(eq(jobs.id, jobId));
+      setTimeout(() => processWithGemini(jobId, imageSource, mimeType), 60_000);
+      return;
+    }
+
     await db
       .update(jobs)
       .set({ status: "failed", error: error.message, updatedAt: new Date() })
