@@ -15,6 +15,10 @@ import {
 } from "../services/cloudinary.service";
 import { CATEGORY_PROMPTS } from "../constants/prompts";
 import axios from "axios";
+import {
+  releaseGlobalGeminiLock,
+  waitForGlobalGeminiLock,
+} from "../services/gemini-lock.service";
 
 async function withGeminiRetry<T>(fn: () => Promise<T>): Promise<T> {
   const delays = [15000, 30000, 60000];
@@ -122,7 +126,8 @@ export const processWithGemini = async (
     //   job.isCustomPrompt ?? false,
     // );
 
-    await acquireGemini();
+    // await acquireGemini();
+    await waitForGlobalGeminiLock(jobId);
     console.log(`🔒 Gemini lock acquired for job: ${jobId}`);
     let editedImage: string;
     try {
@@ -142,8 +147,11 @@ export const processWithGemini = async (
       // );
       editedImage = result.editedImage;
     } finally {
-      releaseGemini();
-      console.log(`🔓 Gemini lock released for job: ${jobId}`);
+      // releaseGemini();
+      // console.log(`🔓 Gemini lock released for job: ${jobId}`);
+      await new Promise((r) => setTimeout(r, 15000));
+      await releaseGlobalGeminiLock();
+      console.log(`🔓 Global Gemini lock released for job: ${jobId}`);
     }
 
     const resultKey = await uploadBase64ToGCS(editedImage, "results");

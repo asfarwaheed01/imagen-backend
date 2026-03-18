@@ -233,3 +233,9 @@ export const revisionsRelations = relations(revisions, ({ one }) => ({
   image: one(images, { fields: [revisions.imageId], references: [images.id] }),
   job: one(jobs, { fields: [revisions.jobId], references: [jobs.id] }),
 }));
+
+export const geminiLock = pgTable("gemini_lock", {
+  id: integer("id").primaryKey().default(1),
+  lockedAt: timestamp("locked_at"),
+  jobId: text("job_id"),
+});
