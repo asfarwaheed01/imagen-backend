@@ -87,7 +87,8 @@ import {
 
 import { buildFinalPrompt } from "./prompt.service";
 
-const MODEL = "gemini-3.1-flash-image-preview";
+// const MODEL = "gemini-3.1-flash-image-preview";
+const MODEL = "gemini-3-pro-image-preview";
 
 const ai = new GoogleGenAI({
   vertexai: true,
