@@ -8,26 +8,9 @@ const auth = new GoogleAuth({
   scopes: ["https://www.googleapis.com/auth/cloud-platform"],
 });
 
-const REAL_ESTATE_SYSTEM_WRAPPER = `
-You are a professional real estate photo editor. Apply the following editing request to the image.
+const REAL_ESTATE_SYSTEM_WRAPPER = `Professional real estate photo editor. Rules: preserve architecture, camera angle, composition exactly. Photorealistic output only. No watermarks, text, or stylization.
 
-PROFESSIONAL GUIDELINES (ALWAYS APPLY):
-- Be hyper-specific in your edits — preserve every architectural detail exactly
-- Maintain the original camera angle, perspective, and composition
-- Use photographic language: natural lighting, wide-angle shot, realistic textures
-- Enhance only what is requested — leave everything else completely untouched
-- Ensure the result looks like a professional real estate marketing photograph
-- No artistic stylization, no watermarks, no text overlays
-- Output must be photorealistic, not illustrated or rendered
-
-STRUCTURAL RULES (NON-NEGOTIABLE):
-- Preserve all windows, doors, walls, ceilings, floors exactly as they are
-- Do NOT add pools, decks, extensions, or any new structures
-- Do NOT change room layout or building footprint
-- Do NOT modify camera angle or perspective
-
-USER REQUEST:
-`;
+REQUEST: `;
 
 export const enhancePrompt = async (userPrompt: string): Promise<string> => {
   console.log("✨ Enhancing prompt with Gemini 2.5 Flash via Vertex...");
@@ -80,15 +63,19 @@ RULES:
   return enhancedPrompt;
 };
 
-export const buildFinalPrompt = async (
-  userPrompt: string,
-  isCustomPrompt: boolean,
-): Promise<string> => {
-  let finalUserPrompt = userPrompt;
+// export const buildFinalPrompt = async (
+//   userPrompt: string,
+//   isCustomPrompt: boolean,
+// ): Promise<string> => {
+//   let finalUserPrompt = userPrompt;
 
-  if (isCustomPrompt) {
-    finalUserPrompt = await enhancePrompt(userPrompt);
-  }
+//   if (isCustomPrompt) {
+//     finalUserPrompt = await enhancePrompt(userPrompt);
+//   }
 
-  return `${REAL_ESTATE_SYSTEM_WRAPPER}${finalUserPrompt}`;
+//   return `${REAL_ESTATE_SYSTEM_WRAPPER}${finalUserPrompt}`;
+// };
+
+export const buildFinalPrompt = (userPrompt: string): string => {
+  return `${REAL_ESTATE_SYSTEM_WRAPPER}${userPrompt}`;
 };

@@ -16,6 +16,22 @@ import {
 import { CATEGORY_PROMPTS } from "../constants/prompts";
 import axios from "axios";
 
+async function withGeminiRetry<T>(fn: () => Promise<T>): Promise<T> {
+  const delays = [15000, 30000, 60000];
+  for (let i = 0; i <= delays.length; i++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      if (err?.status !== 429 || i === delays.length) throw err;
+      console.warn(
+        `[Gemini] 429 — retry ${i + 1}/${delays.length} in ${delays[i] / 1000}s`,
+      );
+      await new Promise((r) => setTimeout(r, delays[i]));
+    }
+  }
+  throw new Error("Gemini max retries exceeded");
+}
+
 let geminiLocked = false;
 const geminiQueue: Array<() => void> = [];
 
@@ -43,7 +59,7 @@ const releaseGemini = () => {
     setTimeout(() => {
       console.log("🚀 Cooldown finished — starting next queued job");
       next();
-    }, 5000);
+    }, 15000);
   } else {
     geminiLocked = false;
   }
@@ -110,12 +126,20 @@ export const processWithGemini = async (
     console.log(`🔒 Gemini lock acquired for job: ${jobId}`);
     let editedImage: string;
     try {
-      const result = await editImageWithVertex(
-        imageBuffer,
-        mimeType,
-        job.prompt ?? "",
-        job.isCustomPrompt ?? false,
+      const result = await withGeminiRetry(() =>
+        editImageWithVertex(
+          imageBuffer,
+          mimeType,
+          job.prompt ?? "",
+          job.isCustomPrompt ?? false,
+        ),
       );
+      // const result = await editImageWithVertex(
+      //   imageBuffer,
+      //   mimeType,
+      //   job.prompt ?? "",
+      //   job.isCustomPrompt ?? false,
+      // );
       editedImage = result.editedImage;
     } finally {
       releaseGemini();

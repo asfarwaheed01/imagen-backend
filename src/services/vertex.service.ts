@@ -106,7 +106,8 @@ export const editImageWithVertex = async (
   prompt: string,
   isCustomPrompt: boolean = false,
 ): Promise<{ editedImage: string; finalPrompt: string }> => {
-  const finalPrompt = await buildFinalPrompt(prompt, isCustomPrompt);
+  // const finalPrompt = await buildFinalPrompt(prompt, isCustomPrompt);
+  const finalPrompt = buildFinalPrompt(prompt);
   console.log("🎯 Final prompt:", finalPrompt);
 
   const userContent: Content = {
